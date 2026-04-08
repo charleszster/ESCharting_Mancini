@@ -29,7 +29,7 @@ Single user, Windows, 1080p, light theme.
 
 ## Current state
 - [x] Project scaffolded
-- [ ] Chart visible with hardcoded data
+- [x] Chart visible with hardcoded data — full UI shell complete
 - [ ] Real Parquet data loading
 - [ ] Timeframe aggregation working
 - [ ] Trade list from Excel
@@ -42,7 +42,9 @@ Single user, Windows, 1080p, light theme.
 - [ ] Roll calculation complete
 
 ## What's next
-- Step 2: Wire up TradingView Lightweight Charts with hardcoded data, build the full UI shell
+- Step 3: CSV → Parquet conversion (one-time import), backend GET /candles endpoint,
+  chart loads real ES data for a default date, loading state while fetching
+- Step 4 follows immediately after: wire up timeframe selector buttons
 
 ## Known issues / gotchas
 - CSV column "volumne" is a typo in the source file — match it exactly during import
