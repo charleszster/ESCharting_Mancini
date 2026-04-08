@@ -5,31 +5,34 @@
 }
 
 :root {
-  --font: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* TradingView light theme palette */
+  --font: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, monospace;
 
-  --bg: #ffffff;
-  --bg-panel: #f8f8f8;
-  --bg-hover: #f0f0f0;
-  --border: #e0e0e0;
-  --text: #1a1a1a;
-  --text-muted: #666666;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --green: #16a34a;
-  --red: #dc2626;
+  --bg:         #ffffff;
+  --bg-panel:   #f0f3fa;
+  --bg-hover:   #e8ebf0;
+  --bg-active:  #dde2ee;
+  --border:     #e0e3eb;
+  --text:       #131722;
+  --text-muted: #787b86;
+  --accent:     #2196f3;
+  --accent-hover: #1a7fd4;
+  --green:      #26a69a;
+  --red:        #ef5350;
 
-  --topbar-h: 44px;
-  --toolbar-h: 36px;
-  --statusbar-h: 28px;
+  --topbar-h:    38px;
+  --toolbar-h:   38px;
+  --statusbar-h: 24px;
   --left-panel-w: 220px;
-  --right-panel-w: 280px;
+  --right-panel-w: 270px;
 
   font-family: var(--font);
   font-size: 13px;
   color: var(--text);
   background: var(--bg);
   color-scheme: light;
+  -webkit-font-smoothing: antialiased;
 }
 
 html, body, #root {
@@ -41,16 +44,19 @@ button {
   font-family: var(--font);
   font-size: 12px;
   cursor: pointer;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--text);
-  padding: 4px 10px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 4px 8px;
   white-space: nowrap;
+  transition: color 0.1s, background 0.1s;
+  line-height: 1.4;
 }
 
 button:hover {
   background: var(--bg-hover);
+  color: var(--text);
 }
 
 textarea {
@@ -58,14 +64,45 @@ textarea {
   font-size: 12px;
   resize: vertical;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 3px;
   padding: 6px 8px;
   width: 100%;
   background: var(--bg);
   color: var(--text);
+  line-height: 1.5;
 }
 
 textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
+
+input[type="text"],
+input[type="number"] {
+  font-family: var(--font);
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 7px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+select {
+  font-family: var(--font);
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 6px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+select:focus { outline: none; border-color: var(--accent); }
