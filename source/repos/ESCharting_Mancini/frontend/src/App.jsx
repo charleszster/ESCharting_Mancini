@@ -40,6 +40,8 @@ const DEFAULT_SETTINGS = {
   crosshairMode:  1,
   crosshairColor: '#9598a1',
   crosshairWidth: 1,
+  // Markers
+  markerFontSize: 11,
   // Price scale
   logScale:          false,
   invertScale:       false,
@@ -55,8 +57,9 @@ export default function App() {
   const [rightWidth,    setRightWidth]    = useState(270)
   const [timeframe,     setTimeframe]     = useState('5m')
   const [adjMode,       setAdjMode]       = useState('non-adj')
-  const [selectedTrade, setSelectedTrade] = useState(null)
-  const [focusDate,     setFocusDate]     = useState(null)
+  const [selectedTrade,     setSelectedTrade]     = useState(null)
+  const [selectedTradeData, setSelectedTradeData] = useState(null)
+  const [focusDate,         setFocusDate]         = useState(null)
   const [settings,      setSettings]      = useState(DEFAULT_SETTINGS)
   const [showSettings,  setShowSettings]  = useState(false)
   const [dateRange,     setDateRange]     = useState({ start: '2026-03-10', end: '2026-03-25' })
@@ -68,10 +71,12 @@ export default function App() {
   function handleTradeSelect(trade) {
     if (selectedTrade === trade.id) {
       setSelectedTrade(null)
+      setSelectedTradeData(null)
       setFocusDate(null)
       return
     }
     setSelectedTrade(trade.id)
+    setSelectedTradeData(trade)
     setFocusDate(trade.entry_date)
 
     // ±6 months around the trade date, clamped to available data
@@ -181,7 +186,7 @@ export default function App() {
           </div>
 
           <div className="chart-container">
-            <Chart ref={chartRef} timeframe={timeframe} settings={settings} dateRange={dateRange} focusDate={focusDate} />
+            <Chart ref={chartRef} timeframe={timeframe} settings={settings} dateRange={dateRange} focusDate={focusDate} tradeData={selectedTradeData} />
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from 'react'
 import { createChart, CandlestickSeries, HistogramSeries } from 'lightweight-charts'
 import { SessionHighlight } from '../lib/SessionHighlight'
+import { TradeMarkersPrimitive } from '../lib/TradeMarkers'
 
 const API_BASE = 'http://localhost:8000'
 const ET_ZONE  = 'America/New_York'
@@ -45,6 +46,76 @@ function hexToRgba(hex, opacity) {
   return `rgba(${r}, ${g}, ${b}, ${opacity})`
 }
 
+// ── Trade markers ────────────────────────────────────────────────────────────
+
+/** Find the candle bar whose open time is <= targetTs and is the closest. */
+function findNearestBarTime(candles, targetTs) {
+  let best = candles[0]?.time ?? null
+  for (const c of candles) {
+    if (c.time <= targetTs) best = c.time
+    else break
+  }
+  return best
+}
+
+function buildMarkers(trade, candles) {
+  if (!candles.length) return []
+  const isLong = trade.direction === 'long'
+
+  const ENTRY_COLOR = isLong ? '#26a69a' : '#ef5350'
+  const EXIT_COLOR  = isLong ? '#ef5350' : '#26a69a'
+
+  const markers = []
+
+  if (trade.entry_ts != null) {
+    const t = findNearestBarTime(candles, trade.entry_ts)
+    if (t !== null) markers.push({
+      time:     t,
+      position: isLong ? 'belowBar' : 'aboveBar',
+      color:    ENTRY_COLOR,
+      shape:    isLong ? 'arrowUp' : 'arrowDown',
+      text:     String(trade.entry_price),
+      size:     2,
+    })
+  }
+
+  for (const exit of trade.exits) {
+    if (exit.ts != null) {
+      const t = findNearestBarTime(candles, exit.ts)
+      if (t !== null) markers.push({
+        time:     t,
+        position: isLong ? 'aboveBar' : 'belowBar',
+        color:    EXIT_COLOR,
+        shape:    isLong ? 'arrowDown' : 'arrowUp',
+        text:     String(exit.price),
+        size:     2,
+      })
+    }
+  }
+
+  // LWC requires ascending time order; deduplicate same-time same-shape markers
+  markers.sort((a, b) => a.time - b.time)
+  return markers
+}
+
+function applyMarkers(primitive, series, trade) {
+  if (!primitive) return
+  if (!trade) { primitive.clearMarkers(); return }
+  const candles = series?.data?.() ?? []
+  const raw = buildMarkers(trade, candles)   // [{time, price, ...}] from the old builder
+
+  // Convert to TradeMarkersPrimitive format
+  const isLong = trade.direction === 'long'
+  const markers = raw.map(m => ({
+    time:      m.time,
+    price:     parseFloat(m.text),           // text held the price string
+    direction: m.shape === 'arrowUp' ? 'up' : 'down',
+    color:     m.color,
+    label:     m.text,
+  }))
+  primitive.setMarkers(markers)
+}
+
 function toBackendTf(tf) {
   if (tf.toUpperCase() === 'D') return 'D'
   const h = tf.match(/^(\d+)h$/i)
@@ -54,13 +125,16 @@ function toBackendTf(tf) {
   return tf
 }
 
-const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange, focusDate }, ref) {
+const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange, focusDate, tradeData }, ref) {
   const containerRef   = useRef(null)
-  const chartRef       = useRef(null)
-  const candleRef      = useRef(null)   // candlestick series
-  const volRef         = useRef(null)   // volume histogram series
-  const shadingRef     = useRef(null)   // SessionHighlight primitive
-  const shadingOnRef   = useRef(false)
+  const chartRef         = useRef(null)
+  const candleRef        = useRef(null)   // candlestick series
+  const volRef           = useRef(null)   // volume histogram series
+  const markersRef       = useRef(null)   // TradeMarkersPrimitive
+  const snapLineRef      = useRef(null)   // price line for OHLC snap mode
+  const crosshairModeRef = useRef(settings.crosshairMode)
+  const shadingRef       = useRef(null)   // SessionHighlight primitive
+  const shadingOnRef     = useRef(false)
 
   const [chartReady, setChartReady] = useState(false)
   const [loading, setLoading]       = useState(true)
@@ -129,15 +203,33 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
       borderVisible:   s.borderVisible,
     })
 
-    chartRef.current  = chart
-    candleRef.current = candle
+    const tradeMarkers = new TradeMarkersPrimitive()
+    tradeMarkers.setSeries(candle)
+    candle.attachPrimitive(tradeMarkers)
+
+    chartRef.current   = chart
+    candleRef.current  = candle
+    markersRef.current = tradeMarkers
     shadingRef.current = new SessionHighlight()
 
     chart.subscribeCrosshairMove(param => {
-      if (param.seriesData && param.seriesData.has(candle)) {
-        setHoverBar(param.seriesData.get(candle))
-      } else {
-        setHoverBar(null)
+      const bar = param.seriesData?.get(candle) ?? null
+      setHoverBar(bar)
+
+      // OHLC snap: update price line to nearest of O/H/L/C
+      if (crosshairModeRef.current === 3 && snapLineRef.current) {
+        if (bar && param.point) {
+          const cursorPrice = candle.coordinateToPrice(param.point.y)
+          if (cursorPrice !== null) {
+            const prices  = [bar.open, bar.high, bar.low, bar.close]
+            const nearest = prices.reduce((a, b) =>
+              Math.abs(b - cursorPrice) < Math.abs(a - cursorPrice) ? b : a
+            )
+            snapLineRef.current.applyOptions({ price: nearest, axisLabelVisible: true })
+          }
+        } else {
+          snapLineRef.current.applyOptions({ price: -1e9, axisLabelVisible: false })
+        }
       }
     })
 
@@ -152,11 +244,13 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     return () => {
       setChartReady(false)
       ro.disconnect()
-      chart.remove()
-      chartRef.current    = null
-      candleRef.current   = null
-      volRef.current      = null
-      shadingRef.current  = null
+      chart.remove()        // removes all attached primitives automatically
+      chartRef.current     = null
+      candleRef.current    = null
+      markersRef.current   = null
+      snapLineRef.current  = null
+      volRef.current       = null
+      shadingRef.current   = null
       shadingOnRef.current = false
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -168,6 +262,27 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     const candle = candleRef.current
     const s      = settings
 
+    // Keep ref current so the subscribe handler always reads the latest mode
+    crosshairModeRef.current = s.crosshairMode
+
+    // Mode 3 = custom OHLC snap: use LWC Normal + hide native horzLine + use price line
+    const lwcMode    = s.crosshairMode === 3 ? 0 : s.crosshairMode
+    const horzActive = s.crosshairMode !== 2 && s.crosshairMode !== 3
+
+    // Create or remove the OHLC snap price line
+    if (s.crosshairMode === 3 && !snapLineRef.current) {
+      snapLineRef.current = candle.createPriceLine({
+        price: -1e9, color: s.crosshairColor,
+        lineWidth: s.crosshairWidth, lineStyle: 0, axisLabelVisible: false,
+      })
+    } else if (s.crosshairMode !== 3 && snapLineRef.current) {
+      candle.removePriceLine(snapLineRef.current)
+      snapLineRef.current = null
+    }
+    if (s.crosshairMode === 3 && snapLineRef.current) {
+      snapLineRef.current.applyOptions({ color: s.crosshairColor, lineWidth: s.crosshairWidth })
+    }
+
     chart.applyOptions({
       layout: { background: { color: s.backgroundColor }, textColor: s.textColor },
       grid: {
@@ -175,9 +290,9 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
         horzLines: { color: s.gridHorzColor, visible: s.gridHorzVisible },
       },
       crosshair: {
-        mode: s.crosshairMode,
-        vertLine: { color: s.crosshairColor, width: s.crosshairWidth },
-        horzLine: { color: s.crosshairColor, width: s.crosshairWidth },
+        mode: lwcMode,
+        vertLine: { color: s.crosshairColor, width: s.crosshairWidth, visible: s.crosshairMode !== 2 },
+        horzLine: { color: s.crosshairColor, width: s.crosshairWidth, visible: horzActive, labelVisible: horzActive },
       },
       rightPriceScale: {
         scaleMargins: { top: s.scaleMarginTop, bottom: s.showVolume ? s.volHeightPct + 0.02 : s.scaleMarginBottom },
@@ -261,6 +376,18 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     }
   }, [chartReady, settings.showVolume, settings.volUpColor, settings.volDownColor, settings.volHeightPct])
 
+  // ── Marker appearance options ────────────────────────────────────────────
+  useEffect(() => {
+    if (!chartReady || !markersRef.current) return
+    markersRef.current.updateOptions({ fontSize: settings.markerFontSize })
+  }, [chartReady, settings.markerFontSize])
+
+  // ── Trade markers (handles deselect / trade switch without re-fetch) ─────
+  useEffect(() => {
+    if (!chartReady) return
+    applyMarkers(markersRef.current, candleRef.current, tradeData)
+  }, [chartReady, tradeData])
+
   // ── Fetch candles ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!chartReady || !candleRef.current) return
@@ -288,6 +415,9 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
         } else {
           chartRef.current.timeScale().fitContent()
         }
+
+        // Apply trade markers (or clear if none selected)
+        applyMarkers(markersRef.current, candleRef.current, tradeData)
 
         // Populate volume histogram if visible
         if (volRef.current && settings.showVolume) {

@@ -14,6 +14,17 @@ TRADES_PATH = Path(os.environ["TRADES_FILE"])
 SHEET_NAME  = os.environ["TRADES_SHEET"]
 
 
+def _to_utc_ts(date_val, time_val) -> int | None:
+    """Convert an ET date + time cell to a UTC unix timestamp (seconds)."""
+    try:
+        date_str = pd.Timestamp(date_val).strftime('%Y-%m-%d')
+        time_str = _fmt_time(time_val) or '00:00:00'
+        ts = pd.Timestamp(f"{date_str} {time_str}").tz_localize('America/New_York')
+        return int(ts.timestamp())
+    except Exception:
+        return None
+
+
 def _fmt_time(val) -> str | None:
     """Convert whatever pandas gives us for a time cell to HH:MM:SS."""
     if pd.isna(val):
@@ -62,6 +73,7 @@ def get_trades() -> list[dict]:
                 exits.append({
                     "date":  pd.Timestamp(row[f"Exit {n} Date"]).strftime("%Y-%m-%d"),
                     "time":  _fmt_time(row.get(f"Exit {n} Time")),
+                    "ts":    _to_utc_ts(row[f"Exit {n} Date"], row.get(f"Exit {n} Time")),
                     "qty":   int(row[f"Exit {n} Qty"]),
                     "price": round(float(row[f"Exit {n} Price"]), 2),
                 })
@@ -70,6 +82,7 @@ def get_trades() -> list[dict]:
             "id":          int(idx),
             "entry_date":  entry_date.strftime("%Y-%m-%d"),
             "entry_time":  _fmt_time(row.get("Entry Time")),
+            "entry_ts":    _to_utc_ts(row["Entry Date"], row.get("Entry Time")),
             "entry_qty":   int(row["Entry Qty"]),
             "entry_price": round(float(row["Entry Price"]), 2),
             "direction":   direction,

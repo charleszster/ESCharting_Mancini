@@ -57,7 +57,9 @@ Single user, Windows, 1080p, light theme.
 - [x] Left and right panels resizable by dragging border
 - [x] Both panels collapsible (left: bottom toggle, right: bottom toggle)
 - [x] Trade log path/sheet configured via .env (TRADES_FILE, TRADES_SHEET)
-- [ ] Trade markers on chart (entry/exit arrows)
+- [x] Trade markers on chart — custom LWC v5 primitive (TradeMarkersPrimitive), arrows pinned to exact entry/exit price, white halo + label background for visibility
+- [x] Marker label font size configurable (⚙ Markers tab, default 11px, range 8–20px)
+- [x] Crosshair modes: Snap to close (default), Snap to OHLC (custom price line), Free, Hidden
 - [ ] Trade detail in right panel (Step 6)
 - [ ] Level lines on chart
 - [ ] Right panel levels fully wired up
@@ -72,8 +74,8 @@ Single user, Windows, 1080p, light theme.
 - After fix: max 10pt diff vs TV (was ±51pt), 8 bars in 3264 differ slightly (feed noise)
 
 ## What's next
-- Step 6: Trade markers on chart — entry arrow, exit arrow(s), with price labels
-- Step 7: Trade detail in right panel — full breakdown of selected trade
+- Step 6: Trade detail in right panel — entry/exit breakdown, P&L, commission
+- Step 7: Adjusted mode — additive back-adjustment at each roll date
 - Step 8: Adjusted mode — additive back-adjustment at each roll date
 - Step 9: Auto level generation (Mancini Pine Script logic on 30-min bars)
 - Step 10: Level lines drawn on chart from SQLite

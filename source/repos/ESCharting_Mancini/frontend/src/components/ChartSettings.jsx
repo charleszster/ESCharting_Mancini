@@ -1,9 +1,10 @@
 import { useState } from 'react'
 
 const CROSSHAIR_MODES = [
-  { value: 1, label: 'Normal' },
-  { value: 2, label: 'Magnet' },
-  { value: 0, label: 'Hidden' },
+  { value: 1, label: 'Snap to close' },
+  { value: 3, label: 'Snap to OHLC' },
+  { value: 0, label: 'Free (no snap)' },
+  { value: 2, label: 'Hidden' },
 ]
 
 function Row({ label, children }) {
@@ -82,7 +83,7 @@ export default function ChartSettings({ value, onChange, onClose }) {
     })
   }
 
-  const tabs = ['candles', 'grid', 'sessions', 'volume', 'scales', 'crosshair']
+  const tabs = ['candles', 'grid', 'sessions', 'volume', 'scales', 'crosshair', 'markers']
 
   return (
     <div className="cs-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -196,6 +197,20 @@ export default function ChartSettings({ value, onChange, onClose }) {
               </Section>
               <Section title="Text">
                 <ColorRow label="Axis text color" value={value.textColor} onChange={v => set('textColor', v)} />
+              </Section>
+            </>
+          )}
+
+          {tab === 'markers' && (
+            <>
+              <Section title="Trade markers">
+                <SliderRow
+                  label="Label font size"
+                  value={value.markerFontSize}
+                  onChange={v => set('markerFontSize', v)}
+                  min={8} max={20} step={1}
+                  fmt={v => `${v}px`}
+                />
               </Section>
             </>
           )}
