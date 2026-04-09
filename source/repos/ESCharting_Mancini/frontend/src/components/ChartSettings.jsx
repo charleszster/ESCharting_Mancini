@@ -83,7 +83,8 @@ export default function ChartSettings({ value, onChange, onClose }) {
     })
   }
 
-  const tabs = ['candles', 'grid', 'sessions', 'volume', 'scales', 'crosshair', 'markers']
+  const tabs = ['candles', 'grid', 'sessions', 'volume', 'scales', 'crosshair', 'markers', 'auto']
+  const tabLabel = t => t === 'auto' ? 'Auto Levels' : t.charAt(0).toUpperCase() + t.slice(1)
 
   return (
     <div className="cs-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -96,7 +97,7 @@ export default function ChartSettings({ value, onChange, onClose }) {
         <div className="cs-tabs">
           {tabs.map(t => (
             <button key={t} className={`cs-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+              {tabLabel(t)}
             </button>
           ))}
         </div>
@@ -255,6 +256,72 @@ export default function ChartSettings({ value, onChange, onClose }) {
               </Section>
             </>
           )}
+
+          {tab === 'auto' && (
+            <>
+              <Section title="Pivot detection">
+                <SliderRow
+                  label="Lookback (bars/side)"
+                  value={value.autoLevels.pivotLen}
+                  onChange={v => set('autoLevels.pivotLen', Math.round(v))}
+                  min={2} max={20} step={1}
+                  fmt={v => `${Math.round(v)}`}
+                />
+                <SliderRow
+                  label="Price range (±pts)"
+                  value={value.autoLevels.priceRange}
+                  onChange={v => set('autoLevels.priceRange', v)}
+                  min={50} max={2000} step={25}
+                  fmt={v => `${v}`}
+                />
+              </Section>
+              <Section title="Level clustering">
+                <SliderRow
+                  label="Min spacing (pts)"
+                  value={value.autoLevels.minSpacing}
+                  onChange={v => set('autoLevels.minSpacing', v)}
+                  min={0.25} max={20} step={0.25}
+                  fmt={v => `${v}`}
+                />
+                <SliderRow
+                  label="Touch zone (±pts)"
+                  value={value.autoLevels.touchZone}
+                  onChange={v => set('autoLevels.touchZone', v)}
+                  min={0.25} max={10} step={0.25}
+                  fmt={v => `${v}`}
+                />
+              </Section>
+              <Section title="Major thresholds">
+                <SliderRow
+                  label="Min bounce (pts)"
+                  value={value.autoLevels.majBounce}
+                  onChange={v => set('autoLevels.majBounce', v)}
+                  min={5} max={200} step={5}
+                  fmt={v => `${v}`}
+                />
+                <SliderRow
+                  label="Min touches"
+                  value={value.autoLevels.majTouches}
+                  onChange={v => set('autoLevels.majTouches', Math.round(v))}
+                  min={1} max={30} step={1}
+                  fmt={v => `${Math.round(v)}`}
+                />
+                <SliderRow
+                  label="Bounce window (bars)"
+                  value={value.autoLevels.forwardBars}
+                  onChange={v => set('autoLevels.forwardBars', Math.round(v))}
+                  min={10} max={500} step={10}
+                  fmt={v => `${Math.round(v)}`}
+                />
+              </Section>
+              <Section title="Filters">
+                <CheckRow label="Major only"        value={value.autoLevels.showMajorOnly}   onChange={v => set('autoLevels.showMajorOnly',   v)} />
+                <CheckRow label="Show supports"     value={value.autoLevels.showSupports}     onChange={v => set('autoLevels.showSupports',     v)} />
+                <CheckRow label="Show resistances"  value={value.autoLevels.showResistances}  onChange={v => set('autoLevels.showResistances',  v)} />
+              </Section>
+            </>
+          )}
+
         </div>
       </div>
     </div>

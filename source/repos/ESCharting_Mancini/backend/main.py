@@ -9,6 +9,7 @@ from data_manager import get_candles, get_data_bounds, parse_timeframe, warm_cac
 from trades_manager import get_trades
 from levels_manager import get_available_dates, get_levels, save_levels, reimport_from_excel
 from downloader import get_estimate, stream_download
+from auto_levels import compute_auto_levels
 
 
 @asynccontextmanager
@@ -63,6 +64,34 @@ class LevelsSave(BaseModel):
 def levels_save(body: LevelsSave):
     try:
         return save_levels(body.date, body.supports_raw, body.resistances_raw)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/levels/auto")
+def levels_auto(
+    pivot_len:        int   = Query(default=5,     ge=2,   le=20),
+    price_range:      float = Query(default=250.0, ge=50,  le=2000),
+    min_spacing:      float = Query(default=3.0,   ge=0.25, le=20),
+    touch_zone:       float = Query(default=2.0,   ge=0.25, le=10),
+    maj_bounce:       float = Query(default=40.0,  ge=5,   le=200),
+    maj_touches:      int   = Query(default=5,     ge=1,   le=30),
+    forward_bars:     int   = Query(default=100,   ge=10,  le=500),
+    show_major_only:  bool        = Query(default=False),
+    show_supports:    bool        = Query(default=True),
+    show_resistances: bool        = Query(default=True),
+    target_date:      str | None  = Query(default=None, description="ET date, e.g. 2026-04-08. Omit for most recent 4pm."),
+):
+    try:
+        return compute_auto_levels(
+            pivot_len=pivot_len, price_range=price_range, min_spacing=min_spacing,
+            touch_zone=touch_zone, maj_bounce=maj_bounce, maj_touches=maj_touches,
+            forward_bars=forward_bars, show_major_only=show_major_only,
+            show_supports=show_supports, show_resistances=show_resistances,
+            target_date=target_date,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

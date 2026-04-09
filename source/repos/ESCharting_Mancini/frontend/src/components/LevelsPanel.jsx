@@ -107,12 +107,20 @@ function TradeDetail({ trade }) {
 export default function LevelsPanel({
   selectedTrade, selectedDate, tradeData,
   levelsData, levelsDate, onLevelsDateChange, onLevelsSaved,
-  levelsVisible, onLevelsVisibleChange,
+  manualVisible, onManualVisibleChange,
+  autoVisible, onAutoVisibleChange,
+  autoLevelsData, onGenerateAutoLevels,
+  autoLevelsLoading, autoLevelsError,
 }) {
   const [tradeOpen,    setTradeOpen]    = useState(true)
   const [detailHeight, setDetailHeight] = useState(180)
-  const [manualOn,     setManualOn]     = useState(true)
-  const [autoOn,       setAutoOn]       = useState(false)
+  const [autoGenDate,  setAutoGenDate]  = useState('')   // '' = most recent 4pm
+  const [autoOpen,     setAutoOpen]     = useState(false)
+
+  // Auto-open the Auto Levels section when data arrives
+  useEffect(() => {
+    if (autoLevelsData) setAutoOpen(true)
+  }, [autoLevelsData])
 
   // Edit buffers
   const [resRaw,    setResRaw]    = useState('')
@@ -193,8 +201,6 @@ if (exactMatch) {
     }
   }
 
-  const dateLabel = selectedDate || 'no date selected'
-
   return (
     <div className="levels-panel">
 
@@ -222,18 +228,42 @@ if (exactMatch) {
         <div className="right-section">
           <div className="right-section-title">Layers</div>
           <div className="layer-row">
-            <span className="layer-label">Levels</span>
-            <Toggle checked={levelsVisible} onChange={onLevelsVisibleChange} />
-          </div>
-          <div className="layer-row">
             <span className="layer-label">Manual levels</span>
-            <Toggle checked={manualOn} onChange={setManualOn} />
+            <Toggle checked={manualVisible} onChange={onManualVisibleChange} />
           </div>
           <div className="layer-row">
             <span className="layer-label">Auto levels</span>
-            <Toggle checked={autoOn} onChange={setAutoOn} />
+            <Toggle checked={autoVisible} onChange={onAutoVisibleChange} />
           </div>
-          <button className="gen-levels-btn">Generate auto levels for {dateLabel}</button>
+          <div className="levels-date-row" style={{ marginTop: 6 }}>
+            <input
+              type="date"
+              className="date-input levels-date-input"
+              value={autoGenDate}
+              onChange={e => setAutoGenDate(e.target.value)}
+              title="Leave blank to use most recent 4pm ET bar"
+            />
+            <button
+              className="copy-btn"
+              onClick={() => setAutoGenDate('')}
+              title="Clear — use most recent 4pm"
+            >latest</button>
+          </div>
+          <button
+            className="gen-levels-btn"
+            onClick={() => onGenerateAutoLevels(autoGenDate || null)}
+            disabled={autoLevelsLoading}
+          >
+            {autoLevelsLoading ? 'Generating…' : 'Generate auto levels'}
+          </button>
+          {autoLevelsData && !autoLevelsLoading && (
+            <div className="levels-date-matched">
+              Auto: {autoLevelsData.date} · 4pm {autoLevelsData.close4pm}
+            </div>
+          )}
+          {autoLevelsError && (
+            <div className="levels-date-matched err-text">{autoLevelsError}</div>
+          )}
 
           {/* Levels date picker */}
           <div className="levels-date-row" style={{ marginTop: 10 }}>
@@ -279,6 +309,39 @@ if (exactMatch) {
             </div>
           )}
         </div>
+
+        {/* ── Auto levels read-only view ── */}
+        {autoLevelsData && (
+          <div className="right-section">
+            <div
+              className="right-section-title right-section-title--toggle"
+              onClick={() => setAutoOpen(o => !o)}
+            >
+              Auto Levels (read-only)
+              <span className="section-chevron">{autoOpen ? '▾' : '▸'}</span>
+            </div>
+            {autoOpen && (
+              <>
+                <div className="level-label-row">
+                  <span className="level-label-text">Resistances</span>
+                </div>
+                <textarea
+                  className="level-textarea"
+                  readOnly
+                  value={autoLevelsData.resistances_raw ?? ''}
+                />
+                <div className="level-label-row">
+                  <span className="level-label-text">Supports</span>
+                </div>
+                <textarea
+                  className="level-textarea"
+                  readOnly
+                  value={autoLevelsData.supports_raw ?? ''}
+                />
+              </>
+            )}
+          </div>
+        )}
 
         <div className="right-section">
           <div className="right-section-title">Levels</div>

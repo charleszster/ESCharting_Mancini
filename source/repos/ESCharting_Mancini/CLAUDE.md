@@ -11,7 +11,7 @@ Single user, Windows, 1080p, light theme.
 - Levels (manual + auto) stored in SQLite (levels.db)
 - Two data modes: Adjusted (back-adjusted, for planning) and Non-Adjusted (for trade review)
 - Non-adjusted is the default when reviewing trades
-- Auto levels always computed on 30-minute bars, replicating Mancini Pine Script logic
+- Auto levels always computed on 15-minute bars, anchored to most recent 4pm ET close
 - Roll methodology replicates TradingView: quarterly CME roll, additive back-adjustment
 - Globex and RTH sessions treated identically — no session filtering
 - Project root: C:\Users\charl\source\repos\ESCharting_Mancini
@@ -64,13 +64,13 @@ Single user, Windows, 1080p, light theme.
 - [x] Adjusted/non-adjusted toggle — adj_offset computed at roll boundaries in es_front_month.parquet using contemporaneous spreads (both contracts at same timestamp); Adj button re-fetches with ?adjusted=true; Non-Adj is default; status bar shows current mode; validated against TV MES1! daily closes (MAD ~1.2 pts, within-period drift ~0)
 - [x] Level lines on chart — green supports / red resistances, solid=major / dashed=minor, label on chart at right edge, one date at a time
 - [x] Levels sourced from data/levels.db (SQLite, imported once from Excel via import_levels.py, 221 rows 2025-03-07 to 2026-04-06)
-- [x] Default levels capped at DATA_END (2026-03-25) so no phantom future levels show
+- [x] Default levels — GET /levels with no date param returns most recent DB entry (no DATA_END cap needed)
 - [x] Trade click auto-loads levels for that trade date AND forces non-adjusted mode
-- [x] Reset button restores latest levels (capped at DATA_END)
-- [x] Levels date picker in right panel; "latest" button resets to DATA_END; matched date shown below picker and in status bar
+- [x] Reset button restores latest levels (most recent DB entry)
+- [x] Levels date picker in right panel; "latest" button resets to most recent DB entry; matched date shown below picker and in status bar
 - [x] Levels editable via right-panel textareas (raw string format); Save button PUTs to /levels and updates chart immediately
 - [x] "Save to date" input lets user change the target date — handles both editing existing entries and adding new ones; view switches to saved date after save
-- [x] Levels visible toggle in Layers section — hides/shows all level lines without losing date selection
+- [x] Levels visible — manual and auto toggles in Layers section (no master toggle); chart receives merged result
 - [x] "Re-import from Excel" button calls POST /levels/reimport — re-reads the Excel file and upserts all rows; shows count + latest date on completion
 - [x] Databento download modal — "Download data" button in topbar opens modal; cost estimate + confirm step; SSE streaming progress; appends to es_1m.parquet (dedup), rebuilds es_front_month.parquet, updates dataEnd in App state; backend: downloader.py + /download/estimate + /download/stream endpoints; chart dateRange.end updates automatically on success
 - [x] Databento download end-date handling — adds 1 day to make end inclusive; caps at Databento's available end (get_dataset_range) to avoid 422 errors from pipeline lag (~8hr lag observed on overnight data; RTH lag TBD)
@@ -81,7 +81,11 @@ Single user, Windows, 1080p, light theme.
 - [x] Level labels on chart — LevelLabelsPrimitive (custom LWC v5 canvas primitive); colored text at right edge, no background box by default; font size 9px default
 - [x] Range levels drawn as zones — price_lo/price_hi returned from backend; two boundary lines drawn (at lo and hi, not midpoint); translucent fill between them (10% opacity default); backend _parse_token handles 4+2-digit shorthand (e.g. 6766-70 → 6766/6770)
 - [x] Level label/zone settings in ⚙ Markers tab — font size slider, color box toggle, show zones toggle, zone opacity slider
-- [ ] Auto level generation (30-min bars, Mancini Pine Script logic)
+- [x] Auto level generation — GET /levels/auto; backend: auto_levels.py (15-min bars, numpy vectorised pivots, bounce/touch/major logic); "Generate auto levels" button + date picker in right panel; auto levels displayed in read-only collapsible section; manual and auto levels each have independent on/off toggles; all params configurable in ⚙ Auto Levels tab
+- [x] Auto levels date picker — date = the day levels are FOR (prior trading day's 4pm is the anchor); Monday picks Friday's 4pm automatically
+- [x] Manual levels default date — now calls GET /levels with no date param on mount, returning most recent DB entry instead of stale hardcoded DATA_END
+- [x] ETH shading fix (Sunday gap) — SessionHighlight.js rewritten to shade gaps *between* RTH windows rather than UTC calendar days; fixes 6–8 PM ET Sunday showing as unshaded because UTC-midnight timestamps in trading gaps return null from timeToCoordinate
+- [x] start.bat — 2-window approach: backend in separate cmd window, frontend in bat window; Ctrl+C kills frontend then auto-kills backend
 
 ## Roll calendar rule
 - Roll at 18:00 ET on the Monday of the expiry week (= 3rd Friday of expiry month − 4 days)
@@ -90,7 +94,72 @@ Single user, Windows, 1080p, light theme.
 - After fix: max 10pt diff vs TV (was ±51pt), 8 bars in 3264 differ slightly (feed noise)
 
 ## What's next
-- Step 9: Auto level generation (Mancini Pine Script logic on 30-min bars)
+- Step 10: Analyze and tune auto level parameters vs Mancini's published levels (ongoing experiment)
+
+## Auto level generation methodology
+Derived from Mancini Pine Script v5.3, adapted and corrected. Not yet implemented in Python.
+
+### Anchor
+- Aggregate 1-min parquet data into 15-min bars
+- Find the most recent 15-min bar whose close time = 4:00 PM ET (bar opens 3:45 PM, closes 4:00 PM)
+- `close4pm` = close price of that bar; this is the price reference for all classification
+
+### Pivot detection
+- Confirm pivot highs and lows using N bars on each side (default N=5, configurable)
+- A pivot high at bar i: `high[i] > high[i-k]` and `high[i] > high[i+k]` for all k in [1..N]
+- A pivot low at bar i: symmetric
+- Only pivots with timestamp ≤ 4pm anchor bar are considered (no future data leakage)
+
+### Level classification (corrected from Pine Script)
+- Pine Script always maps pivot highs → resistance and pivot lows → support
+- Correct behavior: classification is by price location relative to `close4pm`, not pivot type
+  - Pivot (high or low) with price > `close4pm` → **resistance**
+  - Pivot (high or low) with price < `close4pm` → **support**
+  - This captures "prior support acting as resistance" and vice versa
+
+### Candidate filtering
+- Price must be within ±250 pts of `close4pm` (configurable)
+- Pivots processed newest-first (reverse chronological) — most recent test of a price zone wins
+- Deduplication: if new candidate is within `minSpacing` pts (default 3.0) of any already-accepted level, skip it
+
+### Bounce measurement (strength signal)
+- Bounce follows the **pivot type**, not the support/resistance classification:
+  - Pivot high at price P, time T: find min pivot low in (T, T + N_forward bars] → `bounce = P − min_low`
+  - Pivot low at price P, time T: find max pivot high in same window → `bounce = max_high − P`
+- This measures how strongly price was historically rejected from the level, regardless of its current role
+- A pivot low above close4pm (acting as resistance) still measures bounce as max_high_after − P
+- Default N_forward = 100 bars (= 25 hrs on 15-min)
+
+### Touch counting (confluence signal)
+- Count all pivot highs AND pivot lows (timestamp ≤ 4pm anchor) within ±`touchZone` pts (default 2.0) of P
+- Forward touches (after 4pm) are excluded — avoids future data leakage
+
+### Major vs. minor classification
+- `isMajor = bounce ≥ majBounce (default 40 pts)  OR  touches ≥ majTouches (default 5)`
+- Minor = everything else (drawn as dashed line)
+
+### Configurable parameters (new Settings tab)
+| Parameter | Default | Notes |
+|---|---|---|
+| Pivot lookback (bars/side) | 5 | integer |
+| Price range (±pts) | 250 | float |
+| Min level spacing (pts) | 3.0 | float |
+| Touch zone (±pts) | 2.0 | float |
+| Major bounce threshold (pts) | 40 | float |
+| Major touch threshold | 5 | integer |
+| Bounce forward window (bars) | 100 | integer |
+| Show major only | false | toggle |
+| Show supports | true | toggle |
+| Show resistances | true | toggle |
+
+### Storage and UI
+- Auto levels are NOT saved to levels.db — computed in memory only, displayed in read-only collapsible section
+- Date picker represents the day levels are FOR (anchor = prior trading day's 4pm); blank = most recent 4pm in parquet
+- Auto levels do NOT update when user clicks a trade (manual levels do) — auto levels stay pinned to selected date
+- Manual and auto levels each have an independent on/off toggle in the right panel (no master toggle)
+- Displayed on chart alongside manual levels, same visual style (green/red, solid/dashed)
+- "Auto Levels" tab in ⚙ settings modal exposes all parameters; "Copy to editor" removed — use read-only section to copy text
+- supports_raw / resistances_raw returned by backend (sorted: resistances ascending, supports descending)
 
 
 ## Known issues / gotchas

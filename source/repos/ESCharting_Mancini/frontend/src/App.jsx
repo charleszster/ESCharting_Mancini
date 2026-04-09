@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import './App.css'
 import Chart from './components/Chart'
 import TradeList from './components/TradeList'
@@ -53,6 +53,19 @@ const DEFAULT_SETTINGS = {
   invertScale:       false,
   scaleMarginTop:    0.1,
   scaleMarginBottom: 0.1,
+  // Auto level generation
+  autoLevels: {
+    pivotLen:        5,
+    priceRange:      250,
+    minSpacing:      3.0,
+    touchZone:       2.0,
+    majBounce:       40.0,
+    majTouches:      5,
+    forwardBars:     100,
+    showMajorOnly:   false,
+    showSupports:    true,
+    showResistances: true,
+  },
 }
 
 const API_BASE = 'http://localhost:8000'
@@ -99,20 +112,73 @@ export default function App() {
       .catch(() => {})
   }, [])
 
-  const [levelsData,    setLevelsData]    = useState(null)   // {date, supports, resistances}
-  const [levelsDate,    setLevelsDate]    = useState(null)   // null = use latest
-  const [levelsVisible, setLevelsVisible] = useState(true)
+  const [levelsData,       setLevelsData]       = useState(null)  // manual levels
+  const [levelsDate,       setLevelsDate]       = useState(null)  // null = use latest
+  const [manualVisible,    setManualVisible]    = useState(true)
+  const [autoVisible,      setAutoVisible]      = useState(false)
+  const [autoLevelsData,   setAutoLevelsData]   = useState(null)
+  const [autoLevelsLoading, setAutoLevelsLoading] = useState(false)
+  const [autoLevelsError,  setAutoLevelsError]  = useState(null)
 
   // ── Fetch levels whenever levelsDate changes ─────────────────────────────
   // null means "latest available", but cap at dataEnd so we don't show
   // levels for dates beyond the chart data we actually have.
   useEffect(() => {
-    const date = levelsDate ?? dataEnd
-    fetch(`${API_BASE}/levels?date=${date}`)
+    const url = levelsDate
+      ? `${API_BASE}/levels?date=${levelsDate}`
+      : `${API_BASE}/levels`
+    fetch(url)
       .then(r => r.json())
       .then(data => setLevelsData(data.date ? data : null))
       .catch(() => setLevelsData(null))
   }, [levelsDate])
+
+  // Merge manual + auto levels based on individual visibility toggles.
+  // Chart always receives a single merged object (or null).
+  const mergedLevels = useMemo(() => {
+    const sups = [
+      ...(manualVisible && levelsData     ? levelsData.supports     : []),
+      ...(autoVisible   && autoLevelsData ? autoLevelsData.supports : []),
+    ]
+    const ress = [
+      ...(manualVisible && levelsData     ? levelsData.resistances     : []),
+      ...(autoVisible   && autoLevelsData ? autoLevelsData.resistances : []),
+    ]
+    return (sups.length || ress.length) ? { supports: sups, resistances: ress } : null
+  }, [manualVisible, autoVisible, levelsData, autoLevelsData])
+
+  async function handleGenerateAutoLevels(targetDate) {
+    const p = settings.autoLevels
+    const params = new URLSearchParams({
+      pivot_len:        Math.round(p.pivotLen),
+      price_range:      p.priceRange,
+      min_spacing:      p.minSpacing,
+      touch_zone:       p.touchZone,
+      maj_bounce:       p.majBounce,
+      maj_touches:      Math.round(p.majTouches),
+      forward_bars:     Math.round(p.forwardBars),
+      show_major_only:  p.showMajorOnly,
+      show_supports:    p.showSupports,
+      show_resistances: p.showResistances,
+      ...(targetDate ? { target_date: targetDate } : {}),
+    })
+    setAutoLevelsLoading(true)
+    setAutoLevelsError(null)
+    try {
+      const res = await fetch(`${API_BASE}/levels/auto?${params}`)
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail || `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setAutoLevelsData(data)
+      setAutoVisible(true)
+    } catch (err) {
+      setAutoLevelsError(err.message)
+    } finally {
+      setAutoLevelsLoading(false)
+    }
+  }
 
   // If a trade is entered at or after 18:00 ET, Mancini's levels for that
   // session belong to the NEXT trading day (e.g. Sunday 7 PM → Monday levels).
@@ -244,7 +310,7 @@ export default function App() {
           </div>
 
           <div className="chart-container">
-            <Chart ref={chartRef} timeframe={timeframe} settings={settings} dateRange={dateRange} focusDate={focusDate} tradeData={selectedTradeData} adjMode={adjMode} levels={levelsVisible ? levelsData : null} />
+            <Chart ref={chartRef} timeframe={timeframe} settings={settings} dateRange={dateRange} focusDate={focusDate} tradeData={selectedTradeData} adjMode={adjMode} levels={mergedLevels} />
           </div>
         </div>
 
@@ -261,7 +327,23 @@ export default function App() {
           className={`right-panel${rightOpen ? '' : ' collapsed'}`}
           style={rightOpen ? { width: rightWidth } : undefined}
         >
-          {rightOpen && <LevelsPanel selectedTrade={selectedTrade} selectedDate={dateRange.start} tradeData={selectedTradeData} levelsData={levelsData} levelsDate={levelsDate} onLevelsDateChange={setLevelsDate} onLevelsSaved={setLevelsData} levelsVisible={levelsVisible} onLevelsVisibleChange={setLevelsVisible} />}
+          {rightOpen && <LevelsPanel
+            selectedTrade={selectedTrade}
+            selectedDate={dateRange.start}
+            tradeData={selectedTradeData}
+            levelsData={levelsData}
+            levelsDate={levelsDate}
+            onLevelsDateChange={setLevelsDate}
+            onLevelsSaved={setLevelsData}
+            manualVisible={manualVisible}
+            onManualVisibleChange={setManualVisible}
+            autoVisible={autoVisible}
+            onAutoVisibleChange={setAutoVisible}
+            autoLevelsData={autoLevelsData}
+            onGenerateAutoLevels={handleGenerateAutoLevels}
+            autoLevelsLoading={autoLevelsLoading}
+            autoLevelsError={autoLevelsError}
+          />}
           <button
             className="right-panel-toggle"
             onClick={() => setRightOpen(o => !o)}
