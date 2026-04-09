@@ -1,6 +1,6 @@
 """
-Databento download, parquet append, and cache-rebuild helpers.
-Called by the /download/* endpoints in main.py.
+Databento download, TradingView CSV import, parquet append, and cache-rebuild helpers.
+Called by the /download/* and /import/* endpoints in main.py.
 """
 import asyncio
 import json
@@ -177,6 +177,52 @@ def _rebuild_cache() -> None:
 
 def get_estimate(start: str, end: str) -> dict:
     return _get_estimate_sync(start, end)
+
+
+def import_tv_csv(csv_bytes: bytes) -> dict:
+    """
+    Parse a TradingView 1-min OHLC CSV export and append to es_1m.parquet.
+
+    TV export format: time, open, high, low, close  (no volume).
+    Timestamps are ISO-8601 with UTC offset (e.g. 2026-04-09T16:00:00-04:00).
+    Volume is set to 0 for all imported rows.
+    The correct ES front-month symbol is assigned from the roll calendar.
+    Existing rows are deduped — nothing is overwritten.
+    """
+    import io
+    from data_manager import build_roll_calendar
+
+    df = pd.read_csv(io.BytesIO(csv_bytes))
+    required = {'time', 'open', 'high', 'low', 'close'}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"CSV missing columns: {missing}")
+
+    df['ts_event'] = pd.to_datetime(df['time'], utc=True)
+    df['volume']   = 0
+
+    # Assign front-month ES symbol using the roll calendar.
+    # For each timestamp, the active symbol is the one whose roll_ts is
+    # most recent at or before that timestamp (rolls are sorted ascending).
+    rolls   = build_roll_calendar()
+    symbols = pd.Series('', index=df.index)
+    for roll_ts, sym in rolls:
+        symbols[df['ts_event'] >= roll_ts] = sym
+    df['symbol'] = symbols
+    df = df[df['symbol'] != ''].copy()
+    if df.empty:
+        raise ValueError("No rows fall within the known roll calendar range")
+
+    csv_rows = len(df)
+    new_rows = _append_to_parquet(df)
+    _rebuild_cache()
+
+    last_ts = df['ts_event'].max()
+    if hasattr(last_ts, 'tzinfo') and last_ts.tzinfo is None:
+        last_ts = last_ts.tz_localize('UTC')
+    end_date = pd.Timestamp(last_ts).tz_convert('UTC').strftime('%Y-%m-%d')
+
+    return {'new_rows': new_rows, 'csv_rows': csv_rows, 'end_date': end_date}
 
 
 async def stream_download(start: str, end: str):

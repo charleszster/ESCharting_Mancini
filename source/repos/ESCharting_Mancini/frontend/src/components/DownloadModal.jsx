@@ -14,31 +14,29 @@ function fmtBytes(b) {
   return `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
-export default function DownloadModal({ dataEnd, onClose, onSuccess }) {
+// ── Databento tab ─────────────────────────────────────────────────────────────
+
+function DatabentoTab({ dataEnd, onSuccess }) {
   const today = new Date().toISOString().slice(0, 10)
 
   const [startDate,  setStartDate]  = useState(nextDay(dataEnd))
   const [endDate,    setEndDate]    = useState(today)
-  const [phase,      setPhase]      = useState('idle')   // idle|estimating|confirm|downloading|done|error
+  const [phase,      setPhase]      = useState('idle')
   const [estimate,   setEstimate]   = useState(null)
   const [messages,   setMessages]   = useState([])
   const [error,      setError]      = useState(null)
   const [newEndDate, setNewEndDate] = useState(null)
 
   const esRef   = useRef(null)
-  const doneRef = useRef(false)   // prevents onerror false-positive on clean stream close
+  const doneRef = useRef(false)
 
   function resetToIdle() {
-    setPhase('idle')
-    setEstimate(null)
-    setError(null)
-    setMessages([])
-    doneRef.current = false
+    setPhase('idle'); setEstimate(null); setError(null)
+    setMessages([]); doneRef.current = false
   }
 
   async function handleEstimate() {
-    setPhase('estimating')
-    setError(null)
+    setPhase('estimating'); setError(null)
     try {
       const res = await fetch(`${API_BASE}/download/estimate?start=${startDate}&end=${endDate}`)
       if (!res.ok) {
@@ -47,20 +45,13 @@ export default function DownloadModal({ dataEnd, onClose, onSuccess }) {
       }
       setEstimate(await res.json())
       setPhase('confirm')
-    } catch (e) {
-      setError(e.message)
-      setPhase('error')
-    }
+    } catch (e) { setError(e.message); setPhase('error') }
   }
 
   function handleConfirm() {
-    setPhase('downloading')
-    setMessages([])
-    doneRef.current = false
-
+    setPhase('downloading'); setMessages([]); doneRef.current = false
     const es = new EventSource(`${API_BASE}/download/stream?start=${startDate}&end=${endDate}`)
     esRef.current = es
-
     es.onmessage = (e) => {
       const data = JSON.parse(e.data)
       if (data.type === 'progress') {
@@ -70,151 +61,211 @@ export default function DownloadModal({ dataEnd, onClose, onSuccess }) {
         setMessages(m => [...m, data.msg])
         setNewEndDate(data.end_date)
         setPhase('done')
-        es.close()
-        esRef.current = null
+        es.close(); esRef.current = null
+        if (data.end_date) onSuccess(data.end_date)
       } else if (data.type === 'error') {
         doneRef.current = true
-        setError(data.msg)
-        setPhase('error')
-        es.close()
-        esRef.current = null
+        setError(data.msg); setPhase('error')
+        es.close(); esRef.current = null
       }
     }
-
     es.onerror = () => {
-      // EventSource fires onerror when the server closes the stream normally;
-      // doneRef guards against treating that as a real failure.
-      if (!doneRef.current) {
-        setError('Connection to server lost')
-        setPhase('error')
-      }
-      es.close()
-      esRef.current = null
+      if (!doneRef.current) { setError('Connection to server lost'); setPhase('error') }
+      es.close(); esRef.current = null
     }
-  }
-
-  function handleCancel() {
-    if (esRef.current) {
-      esRef.current.close()
-      esRef.current = null
-    }
-    onClose()
-  }
-
-  function handleClose() {
-    if (newEndDate) onSuccess(newEndDate)
-    onClose()
   }
 
   const canEstimate = startDate && endDate && startDate <= endDate
 
   return (
-    <div className="cs-backdrop" onClick={e => { if (e.target === e.currentTarget) handleCancel() }}>
+    <>
+      <div className="dl-body">
+        <div className="dl-current-range">
+          Current data: <strong>2016-03-29 → {dataEnd}</strong>
+        </div>
+
+        {(phase === 'idle' || phase === 'estimating' || phase === 'confirm') && (
+          <div className="dl-date-section">
+            <div className="dl-row">
+              <span className="dl-label">From</span>
+              <input type="date" className="date-input" value={startDate}
+                disabled={phase !== 'idle'}
+                onChange={e => { setStartDate(e.target.value); resetToIdle() }} />
+            </div>
+            <div className="dl-row">
+              <span className="dl-label">To</span>
+              <input type="date" className="date-input" value={endDate}
+                disabled={phase !== 'idle'}
+                onChange={e => { setEndDate(e.target.value); resetToIdle() }} />
+            </div>
+          </div>
+        )}
+
+        {phase === 'confirm' && estimate && (
+          <div className="dl-estimate">
+            Estimated download: <strong>{fmtBytes(estimate.size_bytes)}</strong>
+            {' — '}approx. <strong>${estimate.cost_usd.toFixed(4)}</strong>
+          </div>
+        )}
+
+        {(phase === 'downloading' || phase === 'done') && (
+          <div className="dl-log">
+            {messages.map((m, i) => (
+              <div key={i} className={`dl-log-line${i === messages.length - 1 && phase === 'done' ? ' dl-log-done' : ''}`}>
+                {m}
+              </div>
+            ))}
+            {phase === 'downloading' && <div className="dl-log-line dl-log-active">Working…</div>}
+          </div>
+        )}
+
+        {phase === 'error' && error && <div className="dl-error">{error}</div>}
+      </div>
+
+      <div className="dl-footer">
+        {phase === 'idle' && (
+          <>
+            <button className="save-btn dl-btn" onClick={handleEstimate} disabled={!canEstimate}>Get estimate</button>
+            <button className="dl-cancel-btn" onClick={() => esRef.current?.close()}>Cancel</button>
+          </>
+        )}
+        {phase === 'estimating' && <button className="save-btn dl-btn" disabled>Estimating…</button>}
+        {phase === 'confirm' && (
+          <>
+            <button className="save-btn dl-btn" onClick={handleConfirm}>Confirm &amp; Download</button>
+            <button className="dl-cancel-btn" onClick={resetToIdle}>Back</button>
+          </>
+        )}
+        {phase === 'downloading' && (
+          <button className="dl-cancel-btn" onClick={() => { esRef.current?.close(); esRef.current = null }}>Cancel</button>
+        )}
+        {phase === 'done' && (
+          <div className="dl-log-line dl-log-done" style={{ padding: '6px 0' }}>
+            Done{newEndDate ? ` — data through ${newEndDate}` : ''}
+          </div>
+        )}
+        {phase === 'error' && (
+          <>
+            <button className="save-btn dl-btn" onClick={resetToIdle}>Try again</button>
+            <button className="dl-cancel-btn" onClick={() => {}}>Close</button>
+          </>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ── TradingView CSV import tab ────────────────────────────────────────────────
+
+function TradingViewTab({ onSuccess }) {
+  const [file,    setFile]    = useState(null)
+  const [phase,   setPhase]   = useState('idle')   // idle|importing|done|error
+  const [result,  setResult]  = useState(null)
+  const [error,   setError]   = useState(null)
+  const fileRef = useRef(null)
+
+  async function handleImport() {
+    if (!file) return
+    setPhase('importing'); setError(null); setResult(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch(`${API_BASE}/import/tv`, { method: 'POST', body: form })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail ?? `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setResult(data)
+      setPhase('done')
+      onSuccess(data.end_date)
+    } catch (e) { setError(e.message); setPhase('error') }
+  }
+
+  return (
+    <>
+      <div className="dl-body">
+        <div className="dl-current-range">
+          Export 1-minute OHLC from TradingView (MES1! or ES1!) and import here.
+          Volume is not required — it will be set to 0.
+        </div>
+
+        <div className="dl-row">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv"
+            style={{ display: 'none' }}
+            onChange={e => { setFile(e.target.files[0] || null); setPhase('idle'); setResult(null); setError(null) }}
+          />
+          <button className="dl-cancel-btn" style={{ flex: 'none', width: 'auto', padding: '5px 10px' }}
+            onClick={() => fileRef.current?.click()}>
+            Choose CSV…
+          </button>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {file ? file.name : 'No file selected'}
+          </span>
+        </div>
+
+        {phase === 'importing' && (
+          <div className="dl-log">
+            <div className="dl-log-line dl-log-active">Importing and rebuilding cache (~30s)…</div>
+          </div>
+        )}
+
+        {phase === 'done' && result && (
+          <div className="dl-estimate">
+            Imported <strong>{result.new_rows.toLocaleString()}</strong> new rows
+            ({result.csv_rows.toLocaleString()} in CSV) through <strong>{result.end_date}</strong>
+          </div>
+        )}
+
+        {phase === 'error' && error && <div className="dl-error">{error}</div>}
+      </div>
+
+      <div className="dl-footer">
+        {(phase === 'idle' || phase === 'error') && (
+          <button className="save-btn dl-btn" onClick={handleImport} disabled={!file}>
+            Import CSV
+          </button>
+        )}
+        {phase === 'importing' && (
+          <button className="save-btn dl-btn" disabled>Importing…</button>
+        )}
+        {phase === 'done' && (
+          <div className="dl-log-line dl-log-done" style={{ padding: '6px 0' }}>Done</div>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ── Modal shell ───────────────────────────────────────────────────────────────
+
+export default function DownloadModal({ dataEnd, onClose, onSuccess }) {
+  const [tab, setTab] = useState('databento')
+
+  function handleSuccess(newEnd) {
+    onSuccess(newEnd)
+  }
+
+  return (
+    <div className="cs-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="cs-modal dl-modal">
 
-        {/* Header */}
         <div className="cs-header">
-          <span className="cs-title">Download ES Data from Databento</span>
-          <button className="cs-close" onClick={handleCancel}>×</button>
+          <span className="cs-title">Import ES Data</span>
+          <button className="cs-close" onClick={onClose}>×</button>
         </div>
 
-        {/* Body */}
-        <div className="dl-body">
-          <div className="dl-current-range">
-            Current data: <strong>2016-03-29 → {dataEnd}</strong>
-          </div>
-
-          {/* Date inputs — shown until download starts */}
-          {(phase === 'idle' || phase === 'estimating' || phase === 'confirm') && (
-            <div className="dl-date-section">
-              <div className="dl-row">
-                <span className="dl-label">From</span>
-                <input
-                  type="date"
-                  className="date-input"
-                  value={startDate}
-                  disabled={phase !== 'idle'}
-                  onChange={e => { setStartDate(e.target.value); resetToIdle() }}
-                />
-              </div>
-              <div className="dl-row">
-                <span className="dl-label">To</span>
-                <input
-                  type="date"
-                  className="date-input"
-                  value={endDate}
-                  disabled={phase !== 'idle'}
-                  onChange={e => { setEndDate(e.target.value); resetToIdle() }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Cost estimate */}
-          {phase === 'confirm' && estimate && (
-            <div className="dl-estimate">
-              Estimated download: <strong>{fmtBytes(estimate.size_bytes)}</strong>
-              {' — '}approx. <strong>${estimate.cost_usd.toFixed(4)}</strong>
-            </div>
-          )}
-
-          {/* Progress log */}
-          {(phase === 'downloading' || phase === 'done') && (
-            <div className="dl-log">
-              {messages.map((m, i) => (
-                <div
-                  key={i}
-                  className={`dl-log-line${i === messages.length - 1 && phase === 'done' ? ' dl-log-done' : ''}`}
-                >
-                  {m}
-                </div>
-              ))}
-              {phase === 'downloading' && (
-                <div className="dl-log-line dl-log-active">Working…</div>
-              )}
-            </div>
-          )}
-
-          {/* Error */}
-          {phase === 'error' && error && (
-            <div className="dl-error">{error}</div>
-          )}
+        {/* Tab bar */}
+        <div className="dl-tabs">
+          <button className={`dl-tab${tab === 'databento'  ? ' active' : ''}`} onClick={() => setTab('databento')}>Databento</button>
+          <button className={`dl-tab${tab === 'tradingview' ? ' active' : ''}`} onClick={() => setTab('tradingview')}>TradingView CSV</button>
         </div>
 
-        {/* Footer */}
-        <div className="dl-footer">
-          {phase === 'idle' && (
-            <>
-              <button className="save-btn dl-btn" onClick={handleEstimate} disabled={!canEstimate}>
-                Get estimate
-              </button>
-              <button className="dl-cancel-btn" onClick={handleCancel}>Cancel</button>
-            </>
-          )}
-          {phase === 'estimating' && (
-            <button className="save-btn dl-btn" disabled>Estimating…</button>
-          )}
-          {phase === 'confirm' && (
-            <>
-              <button className="save-btn dl-btn" onClick={handleConfirm}>
-                Confirm &amp; Download
-              </button>
-              <button className="dl-cancel-btn" onClick={handleCancel}>Cancel</button>
-            </>
-          )}
-          {phase === 'downloading' && (
-            <button className="dl-cancel-btn" onClick={handleCancel}>Cancel</button>
-          )}
-          {phase === 'done' && (
-            <button className="save-btn dl-btn" onClick={handleClose}>Close</button>
-          )}
-          {phase === 'error' && (
-            <>
-              <button className="save-btn dl-btn" onClick={resetToIdle}>Try again</button>
-              <button className="dl-cancel-btn" onClick={handleCancel}>Close</button>
-            </>
-          )}
-        </div>
+        {tab === 'databento'   && <DatabentoTab   dataEnd={dataEnd} onSuccess={handleSuccess} />}
+        {tab === 'tradingview' && <TradingViewTab               onSuccess={handleSuccess} />}
 
       </div>
     </div>

@@ -807,7 +807,27 @@
 }
 
 /* ── Download Modal ── */
-.dl-modal { width: 400px; }
+.dl-modal { width: 420px; }
+
+.dl-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.dl-tab {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.dl-tab:hover  { color: var(--text); }
+.dl-tab.active { color: var(--text); border-bottom-color: var(--accent); }
 
 .dl-body {
   padding: 16px;

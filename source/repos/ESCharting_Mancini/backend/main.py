@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from data_manager import get_candles, get_data_bounds, parse_timeframe, warm_cache
 from trades_manager import get_trades
 from levels_manager import get_available_dates, get_levels, save_levels, reimport_from_excel
-from downloader import get_estimate, stream_download
+from downloader import get_estimate, stream_download, import_tv_csv, _executor
 from auto_levels import compute_auto_levels
 
 
@@ -127,6 +127,19 @@ async def download_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/import/tv")
+async def import_tv(file: UploadFile = File(...)):
+    """Accept a TradingView 1-min OHLC CSV export and append to es_1m.parquet."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    try:
+        contents = await file.read()
+        result = await loop.run_in_executor(_executor, import_tv_csv, contents)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/candles/bounds")
