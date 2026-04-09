@@ -86,6 +86,8 @@ Single user, Windows, 1080p, light theme.
 - [x] Manual levels default date — now calls GET /levels with no date param on mount, returning most recent DB entry instead of stale hardcoded DATA_END
 - [x] ETH shading fix (Sunday gap) — SessionHighlight.js rewritten to shade gaps *between* RTH windows rather than UTC calendar days; fixes 6–8 PM ET Sunday showing as unshaded because UTC-midnight timestamps in trading gaps return null from timeToCoordinate
 - [x] start.bat — 2-window approach: backend in separate cmd window, frontend in bat window; Ctrl+C kills frontend then auto-kills backend
+- [x] TradingView CSV import — "Download data" modal has a second tab "TradingView CSV"; accepts MES1!/ES1! 1-min OHLC export (no volume needed); assigns correct ES front-month symbol from roll calendar; deduplicates against existing parquet; rebuilds cache; workaround for Databento's ~13hr pipeline lag
+- [x] Databento download retry loop — handles two successive 422s (pipeline limit then subscription limit) by walking down through parsed available-end timestamps; requires python-multipart in venv
 
 ## Roll calendar rule
 - Roll at 18:00 ET on the Monday of the expiry week (= 3rd Friday of expiry month − 4 days)
@@ -171,7 +173,8 @@ Derived from Mancini Pine Script v5.3, adapted and corrected. Not yet implemente
 - First backend start after adding es_front_month.parquet builds the file (~30s), subsequent starts load from RAM in ~1s
 - es_1m.parquet: 73MB raw source (DO NOT DELETE); es_front_month.parquet: ~25MB preprocessed (can be rebuilt)
 - Data bounds: DATA_START='2016-03-29' is a const in App.jsx; DATA_END is now useState('2026-03-25') so it updates after a successful download
-- Databento pipeline lag: ~8hr observed on overnight data; get_dataset_range() returns conservative/stale available end — downloader now uses try/retry with 422 error message parsing instead (actual available end is accurate)
+- Databento pipeline lag: subscription tier has ~13hr lag (data available up to ~10:54am ET when downloaded at 7pm ET); two successive 422s occur: first "data_end_after_available_end" (pipeline limit), then "dataset_unavailable_range" (subscription cap); downloader loops up to 4 times backing off 1 min each time
+- TradingView CSV export: MES1! or ES1!, 1-min, columns: time/open/high/low/close (no volume); timestamps in ISO-8601 with UTC offset; use as same-day stopgap after 4pm close
 - databento Python package: v0.74.1 installed in venv
 - start.bat corruption: `venv\Scripts\activate` was corrupted to `vnot bpts\activate` at some point — if backend fails to start, check start.bat
 
