@@ -83,7 +83,7 @@ def _get_estimate_sync(start: str, end: str) -> dict:
     except Exception as exc:
         m = _AVAIL_END_RE.search(str(exc))
         if m:
-            return _try(m.group(1))
+            return _try(pd.Timestamp(m.group(1)).isoformat())
         raise
 
 
@@ -107,7 +107,7 @@ def _download_sync(start: str, end: str) -> pd.DataFrame:
     except Exception as exc:
         m = _AVAIL_END_RE.search(str(exc))
         if m:
-            return _try(m.group(1))
+            return _try(pd.Timestamp(m.group(1)).isoformat())
         raise
 
 
