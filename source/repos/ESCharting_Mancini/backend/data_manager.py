@@ -176,6 +176,15 @@ def _get_cache() -> pd.DataFrame:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+def get_data_bounds() -> dict:
+    """Return the actual min/max ET dates in the front-month cache."""
+    df = _get_cache()
+    return {
+        "start": df.index.min().tz_convert("America/New_York").strftime("%Y-%m-%d"),
+        "end":   df.index.max().tz_convert("America/New_York").strftime("%Y-%m-%d"),
+    }
+
+
 def parse_timeframe(tf: str) -> int | None:
     if tf.upper() == "D":
         return None

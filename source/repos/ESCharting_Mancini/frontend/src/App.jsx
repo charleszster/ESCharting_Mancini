@@ -67,17 +67,32 @@ export default function App() {
   const [showSettings,  setShowSettings]  = useState(false)
   const [showDownload,  setShowDownload]  = useState(false)
 
-  // Data bounds — dataEnd declared early so dateRange can use it as initial value.
-  // dataEnd is state so it updates after a successful Databento download.
+  // Data bounds — fetched from backend on mount so they reflect the actual parquet.
+  // Hardcoded fallback used only until the fetch completes.
   const DATA_START = '2016-03-29'
-  const [dataEnd,  setDataEnd]  = useState('2026-03-25')
-
+  const [dataEnd,   setDataEnd]  = useState('2026-03-25')
   const [dateRange, setDateRange] = useState(() => {
     const end   = new Date('2026-03-25T12:00:00Z')
     const start = new Date(end)
     start.setUTCMonth(start.getUTCMonth() - 6)
     return { start: start.toISOString().slice(0, 10), end: '2026-03-25' }
   })
+
+  // On mount, fetch actual data bounds and update the default view
+  useEffect(() => {
+    fetch(`${API_BASE}/candles/bounds`)
+      .then(r => r.json())
+      .then(({ end }) => {
+        setDataEnd(end)
+        setDateRange(r => {
+          const endDate   = new Date(end + 'T12:00:00Z')
+          const startDate = new Date(endDate)
+          startDate.setUTCMonth(startDate.getUTCMonth() - 6)
+          return { start: startDate.toISOString().slice(0, 10), end }
+        })
+      })
+      .catch(() => {})
+  }, [])
 
   const [levelsData,    setLevelsData]    = useState(null)   // {date, supports, resistances}
   const [levelsDate,    setLevelsDate]    = useState(null)   // null = use latest

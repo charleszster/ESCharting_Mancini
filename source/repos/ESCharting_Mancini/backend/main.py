@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from data_manager import get_candles, parse_timeframe, warm_cache
+from data_manager import get_candles, get_data_bounds, parse_timeframe, warm_cache
 from trades_manager import get_trades
 from levels_manager import get_available_dates, get_levels, save_levels, reimport_from_excel
 from downloader import get_estimate, stream_download
@@ -98,6 +98,11 @@ async def download_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/candles/bounds")
+def candles_bounds():
+    return get_data_bounds()
 
 
 @app.get("/candles")
