@@ -5,6 +5,7 @@ import TradeList from './components/TradeList'
 import TimeframeSelector from './components/TimeframeSelector'
 import LevelsPanel from './components/LevelsPanel'
 import ChartSettings from './components/ChartSettings'
+import DownloadModal from './components/DownloadModal'
 
 const DEFAULT_SETTINGS = {
   // Candles — TradingView default palette
@@ -64,25 +65,27 @@ export default function App() {
   const [focusDate,         setFocusDate]         = useState(null)
   const [settings,      setSettings]      = useState(DEFAULT_SETTINGS)
   const [showSettings,  setShowSettings]  = useState(false)
+  const [showDownload,  setShowDownload]  = useState(false)
   const [dateRange,     setDateRange]     = useState({ start: '2026-03-10', end: '2026-03-25' })
   const [levelsData,    setLevelsData]    = useState(null)   // {date, supports, resistances}
   const [levelsDate,    setLevelsDate]    = useState(null)   // null = use latest
   const [levelsVisible, setLevelsVisible] = useState(true)
 
+  // Data bounds from the parquet — used to clamp trade navigation range.
+  // dataEnd is state so it updates after a successful Databento download.
+  const DATA_START = '2016-03-29'
+  const [dataEnd,  setDataEnd]  = useState('2026-03-25')
+
   // ── Fetch levels whenever levelsDate changes ─────────────────────────────
-  // null means "latest available", but cap at DATA_END so we don't show
+  // null means "latest available", but cap at dataEnd so we don't show
   // levels for dates beyond the chart data we actually have.
   useEffect(() => {
-    const date = levelsDate ?? DATA_END
+    const date = levelsDate ?? dataEnd
     fetch(`${API_BASE}/levels?date=${date}`)
       .then(r => r.json())
       .then(data => setLevelsData(data.date ? data : null))
       .catch(() => setLevelsData(null))
   }, [levelsDate])
-
-  // Data bounds from the parquet — used to clamp trade navigation range
-  const DATA_START = '2016-03-29'
-  const DATA_END   = '2026-03-25'
 
   function handleTradeSelect(trade) {
     if (selectedTrade === trade.id) {
@@ -106,7 +109,7 @@ export default function App() {
 
     const clamp = (d, lo, hi) => d < lo ? lo : d > hi ? hi : d
     const lo = new Date(DATA_START + 'T00:00:00Z')
-    const hi = new Date(DATA_END   + 'T00:00:00Z')
+    const hi = new Date(dataEnd    + 'T00:00:00Z')
 
     setDateRange({
       start: clamp(start, lo, hi).toISOString().slice(0, 10),
@@ -130,7 +133,7 @@ export default function App() {
       <div className="topbar">
         <span className="topbar-title">ES Trade Analyzer</span>
         <div className="topbar-actions">
-          <button>Download data</button>
+          <button onClick={() => setShowDownload(true)}>Download data</button>
           <button>Settings</button>
         </div>
       </div>
@@ -253,6 +256,18 @@ export default function App() {
       {/* Chart settings modal */}
       {showSettings && (
         <ChartSettings value={settings} onChange={setSettings} onClose={() => setShowSettings(false)} />
+      )}
+
+      {/* Databento download modal */}
+      {showDownload && (
+        <DownloadModal
+          dataEnd={dataEnd}
+          onClose={() => setShowDownload(false)}
+          onSuccess={newEnd => {
+            setDataEnd(newEnd)
+            setDateRange(r => ({ ...r, end: newEnd }))
+          }}
+        />
       )}
     </div>
   )

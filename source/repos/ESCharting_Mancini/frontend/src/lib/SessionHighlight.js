@@ -50,9 +50,16 @@ class SessionHighlightRenderer {
       const fillBand = (t1, t2) => {
         const x1 = timeScale.timeToCoordinate(t1)
         const x2 = timeScale.timeToCoordinate(t2)
-        if (x1 === null || x2 === null) return
-        const bx1 = Math.round(x1 * horizontalPixelRatio)
-        const bx2 = Math.round(x2 * horizontalPixelRatio)
+        // If a coordinate is null the time is outside the visible data range.
+        // Clamp to the chart edges so bands at the boundary still render
+        // (e.g. overnight session extending past the last downloaded bar).
+        const bx1 = x1 !== null
+          ? Math.round(x1 * horizontalPixelRatio)
+          : (t1 < visibleRange.from ? 0 : null)
+        const bx2 = x2 !== null
+          ? Math.round(x2 * horizontalPixelRatio)
+          : (t2 > visibleRange.to ? bitmapSize.width : null)
+        if (bx1 === null || bx2 === null) return
         if (bx2 > bx1) context.fillRect(bx1, 0, bx2 - bx1, bitmapSize.height)
       }
 

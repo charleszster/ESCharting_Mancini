@@ -72,8 +72,10 @@ Single user, Windows, 1080p, light theme.
 - [x] "Save to date" input lets user change the target date — handles both editing existing entries and adding new ones; view switches to saved date after save
 - [x] Levels visible toggle in Layers section — hides/shows all level lines without losing date selection
 - [x] "Re-import from Excel" button calls POST /levels/reimport — re-reads the Excel file and upserts all rows; shows count + latest date on completion
+- [x] Databento download modal — "Download data" button in topbar opens modal; cost estimate + confirm step; SSE streaming progress; appends to es_1m.parquet (dedup), rebuilds es_front_month.parquet, updates dataEnd in App state; backend: downloader.py + /download/estimate + /download/stream endpoints; chart dateRange.end updates automatically on success
+- [x] Databento download end-date handling — adds 1 day to make end inclusive; caps at Databento's available end (get_dataset_range) to avoid 422 errors from pipeline lag (~8hr lag observed on overnight data; RTH lag TBD)
+- [x] ETH shading fix — SessionHighlight.js now clamps band endpoints to chart edges instead of dropping the band when timeToCoordinate returns null (was cutting off overnight shading at last data bar)
 - [ ] Auto level generation (30-min bars, Mancini Pine Script logic)
-- [ ] Databento download modal
 
 ## Roll calendar rule
 - Roll at 18:00 ET on the Monday of the expiry week (= 3rd Friday of expiry month − 4 days)
@@ -82,16 +84,8 @@ Single user, Windows, 1080p, light theme.
 - After fix: max 10pt diff vs TV (was ±51pt), 8 bars in 3264 differ slightly (feed noise)
 
 ## What's next
-- Step 8: (done — add/edit/toggle/reimport all complete)
 - Step 9: Auto level generation (Mancini Pine Script logic on 30-min bars)
-- Step 10: Databento download modal
 
-## Active bug (as of 2026-04-09)
-- **Textareas not clearing when picking a date not in the DB** (e.g. 4/7/2026)
-  - When user picks a new date in the Levels date picker, the resistance/support textareas should go blank (to signal "new entry"), but they still show the previous date's data
-  - Two fix attempts failed; a `console.log` was added to the useEffect in `LevelsPanel.jsx` to diagnose
-  - Need to open browser DevTools (F12 → Console), pick 4/7/2026, and report what `[LevelsPanel effect]` logs show for `levelsDate`, `levelsData.date`, and `exactMatch`
-  - The fix attempts are in the current useEffect and onChange handler in `LevelsPanel.jsx`
 
 ## Known issues / gotchas
 - CSV column is `volume` (no typo)
@@ -101,7 +95,9 @@ Single user, Windows, 1080p, light theme.
 - Python command on this system: `python` (3.12.11)
 - First backend start after adding es_front_month.parquet builds the file (~30s), subsequent starts load from RAM in ~1s
 - es_1m.parquet: 73MB raw source (DO NOT DELETE); es_front_month.parquet: ~25MB preprocessed (can be rebuilt)
-- Data bounds: 2016-03-29 to 2026-03-25 (hardcoded as DATA_START/DATA_END in App.jsx for trade navigation clamping)
+- Data bounds: DATA_START='2016-03-29' is a const in App.jsx; DATA_END is now useState('2026-03-25') so it updates after a successful download
+- Databento pipeline lag: ~8hr observed on overnight data (downloaded at 8:46 AM ET, got data through 00:40 ET); RTH lag unknown — user to test at 5 PM ET
+- databento Python package: v0.74.1 installed in venv
 
 ## User preferences
 - Visual-first: always keep the app in a runnable state

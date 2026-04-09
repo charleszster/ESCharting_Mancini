@@ -2,11 +2,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from data_manager import get_candles, parse_timeframe, warm_cache
 from trades_manager import get_trades
 from levels_manager import get_available_dates, get_levels, save_levels, reimport_from_excel
+from downloader import get_estimate, stream_download
 
 
 @asynccontextmanager
@@ -73,6 +75,29 @@ def levels_reimport():
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/download/estimate")
+def download_estimate(
+    start: str = Query(..., description="ET date, e.g. 2026-03-26"),
+    end:   str = Query(..., description="ET date, e.g. 2026-04-09"),
+):
+    try:
+        return get_estimate(start, end)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/download/stream")
+async def download_stream(
+    start: str = Query(..., description="ET date, e.g. 2026-03-26"),
+    end:   str = Query(..., description="ET date, e.g. 2026-04-09"),
+):
+    return StreamingResponse(
+        stream_download(start, end),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/candles")
