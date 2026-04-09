@@ -86,8 +86,10 @@ def _get_estimate_sync(start: str, end: str) -> dict:
     except Exception as exc:
         m = _AVAIL_END_RE.search(str(exc))
         if m:
+            # rstrip: "end time before X." — the sentence-ending period must be removed.
             # Subtract 1 min: Databento's "before X" is exclusive, so X itself re-422s.
-            avail = pd.Timestamp(m.group(1) or m.group(2)) - pd.Timedelta(minutes=1)
+            raw   = (m.group(1) or m.group(2)).rstrip('.,;')
+            avail = pd.Timestamp(raw) - pd.Timedelta(minutes=1)
             return _try(avail.isoformat())
         raise
 
@@ -112,8 +114,10 @@ def _download_sync(start: str, end: str) -> pd.DataFrame:
     except Exception as exc:
         m = _AVAIL_END_RE.search(str(exc))
         if m:
+            # rstrip: "end time before X." — the sentence-ending period must be removed.
             # Subtract 1 min: Databento's "before X" is exclusive, so X itself re-422s.
-            avail = pd.Timestamp(m.group(1) or m.group(2)) - pd.Timedelta(minutes=1)
+            raw   = (m.group(1) or m.group(2)).rstrip('.,;')
+            avail = pd.Timestamp(raw) - pd.Timedelta(minutes=1)
             return _try(avail.isoformat())
         raise
 
