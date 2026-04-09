@@ -78,6 +78,9 @@ Single user, Windows, 1080p, light theme.
 - [x] start.bat at project root — double-click launches backend + frontend; browser auto-opens at localhost:5173 via Vite server.open
 - [x] Default chart date range — fetched from GET /candles/bounds on mount (reads actual parquet min/max); shows 6 months before actual data end; no longer hardcoded
 - [x] Default crosshair mode — Snap to OHLC (mode 3); was Snap to close (mode 1)
+- [x] Level labels on chart — LevelLabelsPrimitive (custom LWC v5 canvas primitive); colored text at right edge, no background box by default; font size 9px default
+- [x] Range levels drawn as zones — price_lo/price_hi returned from backend; two boundary lines drawn (at lo and hi, not midpoint); translucent fill between them (10% opacity default); backend _parse_token handles 4+2-digit shorthand (e.g. 6766-70 → 6766/6770)
+- [x] Level label/zone settings in ⚙ Markers tab — font size slider, color box toggle, show zones toggle, zone opacity slider
 - [ ] Auto level generation (30-min bars, Mancini Pine Script logic)
 
 ## Roll calendar rule
@@ -101,6 +104,7 @@ Single user, Windows, 1080p, light theme.
 - Data bounds: DATA_START='2016-03-29' is a const in App.jsx; DATA_END is now useState('2026-03-25') so it updates after a successful download
 - Databento pipeline lag: ~8hr observed on overnight data (downloaded at 8:46 AM ET, got data through 00:40 ET); RTH lag unknown — user to test at 5 PM ET
 - databento Python package: v0.74.1 installed in venv
+- start.bat corruption: `venv\Scripts\activate` was corrupted to `vnot bpts\activate` at some point — if backend fails to start, check start.bat
 
 ## User preferences
 - Visual-first: always keep the app in a runnable state

@@ -2,6 +2,7 @@ import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from 're
 import { createChart, CandlestickSeries, HistogramSeries } from 'lightweight-charts'
 import { SessionHighlight } from '../lib/SessionHighlight'
 import { TradeMarkersPrimitive } from '../lib/TradeMarkers'
+import { LevelLabelsPrimitive } from '../lib/LevelLabels'
 
 const API_BASE = 'http://localhost:8000'
 const ET_ZONE  = 'America/New_York'
@@ -136,6 +137,7 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
   const shadingRef       = useRef(null)   // SessionHighlight primitive
   const shadingOnRef     = useRef(false)
   const levelLinesRef    = useRef([])     // active level price lines
+  const levelLabelsRef   = useRef(null)   // LevelLabelsPrimitive
 
   const [chartReady, setChartReady] = useState(false)
   const [loading, setLoading]       = useState(true)
@@ -208,10 +210,14 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     tradeMarkers.setSeries(candle)
     candle.attachPrimitive(tradeMarkers)
 
-    chartRef.current   = chart
-    candleRef.current  = candle
-    markersRef.current = tradeMarkers
-    shadingRef.current = new SessionHighlight()
+    const levelLabels = new LevelLabelsPrimitive()
+    candle.attachPrimitive(levelLabels)
+
+    chartRef.current      = chart
+    candleRef.current     = candle
+    markersRef.current    = tradeMarkers
+    levelLabelsRef.current = levelLabels
+    shadingRef.current    = new SessionHighlight()
 
     chart.subscribeCrosshairMove(param => {
       const bar = param.seriesData?.get(candle) ?? null
@@ -246,14 +252,15 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
       setChartReady(false)
       ro.disconnect()
       chart.remove()        // removes all attached primitives automatically
-      chartRef.current      = null
-      candleRef.current     = null
-      markersRef.current    = null
-      snapLineRef.current   = null
-      volRef.current        = null
-      shadingRef.current    = null
-      shadingOnRef.current  = false
-      levelLinesRef.current = []
+      chartRef.current       = null
+      candleRef.current      = null
+      markersRef.current     = null
+      levelLabelsRef.current = null
+      snapLineRef.current    = null
+      volRef.current         = null
+      shadingRef.current     = null
+      shadingOnRef.current   = false
+      levelLinesRef.current  = []
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -384,6 +391,17 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     markersRef.current.updateOptions({ fontSize: settings.markerFontSize })
   }, [chartReady, settings.markerFontSize])
 
+  // ── Level label appearance options ───────────────────────────────────────
+  useEffect(() => {
+    if (!chartReady || !levelLabelsRef.current) return
+    levelLabelsRef.current.updateOptions({
+      fontSize:    settings.levelFontSize,
+      showBox:     settings.levelShowBox,
+      showZones:   settings.levelShowZones,
+      zoneOpacity: settings.levelZoneOpacity,
+    })
+  }, [chartReady, settings.levelFontSize, settings.levelShowBox, settings.levelShowZones, settings.levelZoneOpacity])
+
   // ── Trade markers (handles deselect / trade switch without re-fetch) ─────
   useEffect(() => {
     if (!chartReady) return
@@ -401,6 +419,9 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     }
     levelLinesRef.current = []
 
+    // Clear labels primitive regardless
+    levelLabelsRef.current?.setLevels([])
+
     if (!levels) return
 
     const SUPPORT_COLOR    = '#26a69a'  // green
@@ -408,22 +429,31 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     const SOLID  = 0
     const DASHED = 2
 
+    const labelEntries = []
+
     const drawLevels = (list, color) => {
       for (const lvl of list) {
-        const pl = series.createPriceLine({
-          price:            lvl.price,
-          color,
-          lineWidth:        1,
-          lineStyle:        lvl.major ? SOLID : DASHED,
-          axisLabelVisible: false,
-          title:            lvl.label,
-        })
-        levelLinesRef.current.push(pl)
+        const price_lo = lvl.price_lo ?? lvl.price
+        const price_hi = lvl.price_hi ?? lvl.price
+        const isRange  = price_lo !== price_hi
+        const style    = lvl.major ? SOLID : DASHED
+
+        if (isRange) {
+          // Draw a line at each boundary of the zone
+          levelLinesRef.current.push(series.createPriceLine({ price: price_lo, color, lineWidth: 1, lineStyle: style, axisLabelVisible: false }))
+          levelLinesRef.current.push(series.createPriceLine({ price: price_hi, color, lineWidth: 1, lineStyle: style, axisLabelVisible: false }))
+        } else {
+          levelLinesRef.current.push(series.createPriceLine({ price: lvl.price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: false }))
+        }
+
+        labelEntries.push({ price: lvl.price, price_lo, price_hi, color, text: lvl.label })
       }
     }
 
     drawLevels(levels.supports,    SUPPORT_COLOR)
     drawLevels(levels.resistances, RESISTANCE_COLOR)
+
+    levelLabelsRef.current?.setLevels(labelEntries)
   }, [chartReady, levels])
 
   // ── Fetch candles ─────────────────────────────────────────────────────────

@@ -43,6 +43,11 @@ const DEFAULT_SETTINGS = {
   crosshairWidth: 1,
   // Markers
   markerFontSize: 11,
+  // Level labels
+  levelFontSize:    9,
+  levelShowBox:     false,
+  levelShowZones:   true,
+  levelZoneOpacity: 0.10,
   // Price scale
   logScale:          false,
   invertScale:       false,

@@ -46,12 +46,14 @@ def _parse_token(token: str) -> dict | None:
             p2 = float(str(int(p1))[:-n] + p2_str)
         else:
             p2 = float(p2_str)
-        price = round((p1 + p2) / 2, 2)
-        return {"price": price, "major": major, "label": clean}
+        price_lo = round(min(p1, p2), 2)
+        price_hi = round(max(p1, p2), 2)
+        price    = round((price_lo + price_hi) / 2, 2)
+        return {"price": price, "price_lo": price_lo, "price_hi": price_hi, "major": major, "label": clean}
 
     try:
         price = float(clean)
-        return {"price": price, "major": major, "label": clean}
+        return {"price": price, "price_lo": price, "price_hi": price, "major": major, "label": clean}
     except ValueError:
         return None
 

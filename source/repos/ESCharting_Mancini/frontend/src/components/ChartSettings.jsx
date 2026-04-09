@@ -212,6 +212,26 @@ export default function ChartSettings({ value, onChange, onClose }) {
                   fmt={v => `${v}px`}
                 />
               </Section>
+              <Section title="Level labels">
+                <SliderRow
+                  label="Font size"
+                  value={value.levelFontSize}
+                  onChange={v => set('levelFontSize', v)}
+                  min={7} max={16} step={1}
+                  fmt={v => `${v}px`}
+                />
+                <CheckRow label="Color boxes" value={value.levelShowBox} onChange={v => set('levelShowBox', v)} />
+              </Section>
+              <Section title="Level zones">
+                <CheckRow label="Show zones" value={value.levelShowZones} onChange={v => set('levelShowZones', v)} />
+                <SliderRow
+                  label="Opacity"
+                  value={value.levelZoneOpacity}
+                  onChange={v => set('levelZoneOpacity', v)}
+                  min={0.02} max={0.5} step={0.01}
+                  fmt={v => `${Math.round(v * 100)}%`}
+                />
+              </Section>
             </>
           )}
 
