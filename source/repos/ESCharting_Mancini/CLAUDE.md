@@ -73,7 +73,7 @@ Single user, Windows, 1080p, light theme.
 - [x] Levels visible — manual and auto toggles in Layers section (no master toggle); chart receives merged result
 - [x] "Re-import from Excel" button calls POST /levels/reimport — re-reads the Excel file and upserts all rows; shows count + latest date on completion
 - [x] Databento download modal — "Download data" button in topbar opens modal; cost estimate + confirm step; SSE streaming progress; appends to es_1m.parquet (dedup), rebuilds es_front_month.parquet, updates dataEnd in App state; backend: downloader.py + /download/estimate + /download/stream endpoints; chart dateRange.end updates automatically on success
-- [x] Databento download end-date handling — adds 1 day to make end inclusive; caps at Databento's available end (get_dataset_range) to avoid 422 errors from pipeline lag (~8hr lag observed on overnight data; RTH lag TBD)
+- [x] Databento download end-date handling — adds 1 day to make end inclusive; uses try/retry approach: attempt desired end, if Databento 422s with "available up to 'TIMESTAMP'", parse that timestamp and retry; get_dataset_range() removed (returned stale/conservative end, got data only to 9am ET when 4pm ET was actually available)
 - [x] ETH shading fix — SessionHighlight.js now clamps band endpoints to chart edges instead of dropping the band when timeToCoordinate returns null (was cutting off overnight shading at last data bar)
 - [x] start.bat at project root — double-click launches backend + frontend; browser auto-opens at localhost:5173 via Vite server.open
 - [x] Default chart date range — fetched from GET /candles/bounds on mount (reads actual parquet min/max); shows 6 months before actual data end; no longer hardcoded
@@ -171,7 +171,7 @@ Derived from Mancini Pine Script v5.3, adapted and corrected. Not yet implemente
 - First backend start after adding es_front_month.parquet builds the file (~30s), subsequent starts load from RAM in ~1s
 - es_1m.parquet: 73MB raw source (DO NOT DELETE); es_front_month.parquet: ~25MB preprocessed (can be rebuilt)
 - Data bounds: DATA_START='2016-03-29' is a const in App.jsx; DATA_END is now useState('2026-03-25') so it updates after a successful download
-- Databento pipeline lag: ~8hr observed on overnight data (downloaded at 8:46 AM ET, got data through 00:40 ET); RTH lag unknown — user to test at 5 PM ET
+- Databento pipeline lag: ~8hr observed on overnight data; get_dataset_range() returns conservative/stale available end — downloader now uses try/retry with 422 error message parsing instead (actual available end is accurate)
 - databento Python package: v0.74.1 installed in venv
 - start.bat corruption: `venv\Scripts\activate` was corrupted to `vnot bpts\activate` at some point — if backend fails to start, check start.bat
 

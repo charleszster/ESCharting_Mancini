@@ -47,50 +47,68 @@ def _client():
 
 # ── Sync helpers (run in thread executor) ─────────────────────────────────────
 
+# Databento's 422 error for exceeding available data includes the actual
+# available end timestamp.  We parse it and retry rather than relying on
+# get_dataset_range(), which returns a conservative (stale) value.
+_AVAIL_END_RE = _re.compile(r"available up to '([^']+)'")
+
+
+def _desired_end(end: str) -> str:
+    """Add 1 day to make the user-supplied ET date inclusive (Databento end is exclusive)."""
+    from datetime import date, timedelta
+    return pd.Timestamp(date.fromisoformat(end) + timedelta(days=1), tz="UTC").isoformat()
+
+
 def _get_estimate_sync(start: str, end: str) -> dict:
-    client = _client()
-    cost = client.metadata.get_cost(
-        dataset=DATASET, symbols=SYMBOLS, stype_in=STYPE,
-        schema=SCHEMA, start=start, end=end,
-    )
-    size = client.metadata.get_billable_size(
-        dataset=DATASET, symbols=SYMBOLS, stype_in=STYPE,
-        schema=SCHEMA, start=start, end=end,
-    )
-    return {"cost_usd": float(cost), "size_bytes": int(size)}
+    """
+    Try the desired end; if Databento rejects it, parse the actual available
+    end from the error message and retry.
+    """
+    client  = _client()
+    end_str = _desired_end(end)
+
+    def _try(e):
+        cost = client.metadata.get_cost(
+            dataset=DATASET, symbols=SYMBOLS, stype_in=STYPE,
+            schema=SCHEMA, start=start, end=e,
+        )
+        size = client.metadata.get_billable_size(
+            dataset=DATASET, symbols=SYMBOLS, stype_in=STYPE,
+            schema=SCHEMA, start=start, end=e,
+        )
+        return {"cost_usd": float(cost), "size_bytes": int(size)}
+
+    try:
+        return _try(end_str)
+    except Exception as exc:
+        m = _AVAIL_END_RE.search(str(exc))
+        if m:
+            return _try(m.group(1))
+        raise
 
 
 def _download_sync(start: str, end: str) -> pd.DataFrame:
     """
     start/end are ET calendar dates (YYYY-MM-DD).
-    Databento's end is exclusive midnight UTC, so we add 1 day to end to
-    capture the full ET calendar day (analogous to data_manager.get_candles).
-    We then cap at Databento's actual available end to avoid 422 errors
-    (their pipeline has a few hours of lag on recent data).
+    Try the desired end; if Databento rejects it, parse the actual available
+    end from the 422 error and retry.
     """
-    from datetime import date, timedelta
+    client  = _client()
+    end_str = _desired_end(end)
 
-    client = _client()
+    def _try(e):
+        return client.timeseries.get_range(
+            dataset=DATASET, symbols=SYMBOLS, stype_in=STYPE,
+            schema=SCHEMA, start=start, end=e,
+        ).to_df()
 
-    # Desired end: add 1 day so the user-specified date is inclusive
-    desired_end = pd.Timestamp(date.fromisoformat(end) + timedelta(days=1), tz="UTC")
-
-    # Cap at Databento's available end for this dataset
     try:
-        dr = client.metadata.get_dataset_range(dataset=DATASET)
-        avail_end = pd.Timestamp(dr.end if hasattr(dr, "end") else dr["end"])
-        if avail_end.tzinfo is None:
-            avail_end = avail_end.tz_localize("UTC")
-        if desired_end > avail_end:
-            desired_end = avail_end
-    except Exception:
-        pass  # If the metadata call fails, proceed with desired_end as-is
-
-    store = client.timeseries.get_range(
-        dataset=DATASET, symbols=SYMBOLS, stype_in=STYPE,
-        schema=SCHEMA, start=start, end=desired_end.isoformat(),
-    )
-    return store.to_df()
+        return _try(end_str)
+    except Exception as exc:
+        m = _AVAIL_END_RE.search(str(exc))
+        if m:
+            return _try(m.group(1))
+        raise
 
 
 def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
