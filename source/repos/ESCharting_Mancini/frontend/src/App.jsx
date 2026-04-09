@@ -109,6 +109,16 @@ export default function App() {
       .catch(() => setLevelsData(null))
   }, [levelsDate])
 
+  // If a trade is entered at or after 18:00 ET, Mancini's levels for that
+  // session belong to the NEXT trading day (e.g. Sunday 7 PM → Monday levels).
+  function getTradeSessionDate(entryDate, entryTime) {
+    if (!entryTime || entryTime < '18:00:00') return entryDate
+    const d = new Date(entryDate + 'T12:00:00Z')
+    d.setUTCDate(d.getUTCDate() + 1)
+    if (d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 2) // Fri+1=Sat → Mon
+    return d.toISOString().slice(0, 10)
+  }
+
   function handleTradeSelect(trade) {
     if (selectedTrade === trade.id) {
       setSelectedTrade(null)
@@ -119,7 +129,7 @@ export default function App() {
     setSelectedTrade(trade.id)
     setSelectedTradeData(trade)
     setFocusDate(trade.entry_date)
-    setLevelsDate(trade.entry_date)   // auto-load levels for this trade's date
+    setLevelsDate(getTradeSessionDate(trade.entry_date, trade.entry_time))
     setAdjMode('non-adj')             // levels are non-adjusted; switch mode to match
 
     // ±6 months around the trade date, clamped to available data
