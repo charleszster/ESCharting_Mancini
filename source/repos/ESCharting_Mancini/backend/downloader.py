@@ -86,8 +86,6 @@ def _get_estimate_sync(start: str, end: str) -> dict:
     except Exception as exc:
         m = _AVAIL_END_RE.search(str(exc))
         if m:
-            # rstrip: "end time before X." — the sentence-ending period must be removed.
-            # Subtract 1 min: Databento's "before X" is exclusive, so X itself re-422s.
             raw   = (m.group(1) or m.group(2)).rstrip('.,;')
             avail = pd.Timestamp(raw) - pd.Timedelta(minutes=1)
             return _try(avail.isoformat())
@@ -112,13 +110,20 @@ def _download_sync(start: str, end: str) -> pd.DataFrame:
     try:
         return _try(end_str)
     except Exception as exc:
-        m = _AVAIL_END_RE.search(str(exc))
+        exc_str = str(exc)
+        print(f"[downloader] first attempt failed: {exc_str[:300]}")
+        m = _AVAIL_END_RE.search(exc_str)
         if m:
-            # rstrip: "end time before X." — the sentence-ending period must be removed.
-            # Subtract 1 min: Databento's "before X" is exclusive, so X itself re-422s.
-            raw   = (m.group(1) or m.group(2)).rstrip('.,;')
-            avail = pd.Timestamp(raw) - pd.Timedelta(minutes=1)
-            return _try(avail.isoformat())
+            raw       = (m.group(1) or m.group(2)).rstrip('.,;')
+            avail     = pd.Timestamp(raw) - pd.Timedelta(minutes=1)
+            retry_end = avail.strftime('%Y-%m-%dT%H:%M:%SZ')
+            print(f"[downloader] retry with end={retry_end!r}")
+            try:
+                return _try(retry_end)
+            except Exception as exc2:
+                print(f"[downloader] retry also failed: {str(exc2)[:300]}")
+                raise
+        print(f"[downloader] no pattern match in error — re-raising")
         raise
 
 
