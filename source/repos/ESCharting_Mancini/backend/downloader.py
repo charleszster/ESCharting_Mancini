@@ -84,11 +84,20 @@ def _get_estimate_sync(start: str, end: str) -> dict:
     try:
         return _try(end_str)
     except Exception as exc:
-        m = _AVAIL_END_RE.search(str(exc))
+        exc_str = str(exc)
+        print(f"[estimate] first attempt failed: {exc_str[:300]}")
+        m = _AVAIL_END_RE.search(exc_str)
         if m:
-            raw   = (m.group(1) or m.group(2)).rstrip('.,;')
-            avail = pd.Timestamp(raw) - pd.Timedelta(minutes=1)
-            return _try(avail.isoformat())
+            raw       = (m.group(1) or m.group(2)).rstrip('.,;')
+            avail     = pd.Timestamp(raw) - pd.Timedelta(minutes=1)
+            retry_end = avail.strftime('%Y-%m-%dT%H:%M:%SZ')
+            print(f"[estimate] retry with end={retry_end!r}")
+            try:
+                return _try(retry_end)
+            except Exception as exc2:
+                print(f"[estimate] retry also failed: {str(exc2)[:300]}")
+                raise
+        print(f"[estimate] no pattern match — re-raising")
         raise
 
 
