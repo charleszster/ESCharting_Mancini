@@ -125,7 +125,7 @@ function toBackendTf(tf) {
   return tf
 }
 
-const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange, focusDate, tradeData }, ref) {
+const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange, focusDate, tradeData, adjMode = 'non-adj', levels = null }, ref) {
   const containerRef   = useRef(null)
   const chartRef         = useRef(null)
   const candleRef        = useRef(null)   // candlestick series
@@ -135,6 +135,7 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
   const crosshairModeRef = useRef(settings.crosshairMode)
   const shadingRef       = useRef(null)   // SessionHighlight primitive
   const shadingOnRef     = useRef(false)
+  const levelLinesRef    = useRef([])     // active level price lines
 
   const [chartReady, setChartReady] = useState(false)
   const [loading, setLoading]       = useState(true)
@@ -245,13 +246,14 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
       setChartReady(false)
       ro.disconnect()
       chart.remove()        // removes all attached primitives automatically
-      chartRef.current     = null
-      candleRef.current    = null
-      markersRef.current   = null
-      snapLineRef.current  = null
-      volRef.current       = null
-      shadingRef.current   = null
-      shadingOnRef.current = false
+      chartRef.current      = null
+      candleRef.current     = null
+      markersRef.current    = null
+      snapLineRef.current   = null
+      volRef.current        = null
+      shadingRef.current    = null
+      shadingOnRef.current  = false
+      levelLinesRef.current = []
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -388,6 +390,42 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     applyMarkers(markersRef.current, candleRef.current, tradeData)
   }, [chartReady, tradeData])
 
+  // ── Level lines ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!chartReady || !candleRef.current) return
+    const series = candleRef.current
+
+    // Remove all existing level lines
+    for (const pl of levelLinesRef.current) {
+      try { series.removePriceLine(pl) } catch (_) {}
+    }
+    levelLinesRef.current = []
+
+    if (!levels) return
+
+    const SUPPORT_COLOR    = '#26a69a'  // green
+    const RESISTANCE_COLOR = '#ef5350'  // red
+    const SOLID  = 0
+    const DASHED = 2
+
+    const drawLevels = (list, color) => {
+      for (const lvl of list) {
+        const pl = series.createPriceLine({
+          price:            lvl.price,
+          color,
+          lineWidth:        1,
+          lineStyle:        lvl.major ? SOLID : DASHED,
+          axisLabelVisible: false,
+          title:            lvl.label,
+        })
+        levelLinesRef.current.push(pl)
+      }
+    }
+
+    drawLevels(levels.supports,    SUPPORT_COLOR)
+    drawLevels(levels.resistances, RESISTANCE_COLOR)
+  }, [chartReady, levels])
+
   // ── Fetch candles ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!chartReady || !candleRef.current) return
@@ -396,8 +434,9 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     setLoading(true)
     setError(null)
 
+    const isAdj = adjMode === 'adj'
     fetch(
-      `${API_BASE}/candles?timeframe=${tf}&start=${dateRange.start}&end=${dateRange.end}`,
+      `${API_BASE}/candles?timeframe=${tf}&start=${dateRange.start}&end=${dateRange.end}&adjusted=${isAdj}`,
       { signal: controller.signal }
     )
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
@@ -435,7 +474,7 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
       })
 
     return () => controller.abort()
-  }, [chartReady, tf, dateRange, focusDate]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chartReady, tf, dateRange, focusDate, adjMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>

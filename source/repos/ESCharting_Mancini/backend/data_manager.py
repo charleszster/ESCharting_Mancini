@@ -67,6 +67,8 @@ def build_roll_calendar() -> list[tuple[pd.Timestamp, str]]:
 def build_front_month_parquet() -> None:
     """
     Read es_1m.parquet, apply the roll calendar, write es_front_month.parquet.
+    Adds an adj_offset column: additive back-adjustment offset for each bar so
+    that adjusted = open/high/low/close + adj_offset.  Most recent segment = 0.
     Run once (or after importing new CSV data).  ~3.3M rows, ~25 MB on disk.
     """
     print("Building es_front_month.parquet …")
@@ -86,10 +88,60 @@ def build_front_month_parquet() -> None:
         )
         pieces.append(df[mask])
 
+    # ── Compute additive back-adjustment offsets ──────────────────────────────
+    # At each roll boundary we need the contemporaneous spread: new contract
+    # close MINUS old contract close at the same timestamp.
+    #
+    # We cannot use pieces[i].iloc[-1] for the old price because the CME
+    # maintenance window (17:00–18:00 ET) creates a ~1-hour gap between the
+    # last old-contract bar (≈16:59 ET) and the first new-contract bar (18:00
+    # ET).  Market movement during that window inflates the apparent gap.
+    #
+    # Fix: at the roll boundary, look up the old contract in the raw df at the
+    # same timestamp as the first new-contract bar.  Both contracts trade
+    # simultaneously at 18:00 ET (Globex reopen), so we get a true spread.
+    N = len(pieces)
+    adj_offsets = [0.0] * N
+
+    # Build a fast lookup: symbol → df subset (ts_event as index)
+    df_indexed = df.set_index("ts_event").sort_index()
+
+    for i in range(N - 2, -1, -1):
+        if pieces[i].empty or pieces[i + 1].empty:
+            adj_offsets[i] = adj_offsets[i + 1]
+            continue
+
+        first_new_ts    = pieces[i + 1]["ts_event"].iloc[0]
+        first_new_price = float(pieces[i + 1]["close"].iloc[0])
+
+        old_sym = rolls[i][1]   # symbol of segment i (becomes "old" at next roll)
+        old_sym_df = df_indexed[df_indexed["symbol"] == old_sym]
+
+        # Find the old contract's close at the same timestamp as the first new bar.
+        # Fall back to the closest bar at or before that time if not exact.
+        if first_new_ts in old_sym_df.index:
+            old_price = float(old_sym_df.loc[first_new_ts, "close"])
+            if isinstance(old_price, pd.Series):
+                old_price = float(old_price.iloc[0])
+        else:
+            candidates = old_sym_df[old_sym_df.index <= first_new_ts]
+            if candidates.empty:
+                adj_offsets[i] = adj_offsets[i + 1]
+                continue
+            old_price = float(candidates["close"].iloc[-1])
+
+        diff = first_new_price - old_price
+        adj_offsets[i] = adj_offsets[i + 1] + diff
+
+    for i in range(N):
+        if not pieces[i].empty:
+            pieces[i] = pieces[i].copy()
+            pieces[i]["adj_offset"] = round(adj_offsets[i], 4)
+
     result = pd.concat(pieces).sort_values("ts_event").reset_index(drop=True)
     result.to_parquet(FRONT_MONTH_PATH, index=False)
     mb = FRONT_MONTH_PATH.stat().st_size / 1e6
-    print(f"Done — {len(result):,} rows, {mb:.1f} MB → {FRONT_MONTH_PATH}")
+    print(f"Done -- {len(result):,} rows, {mb:.1f} MB -> {FRONT_MONTH_PATH}")
 
 
 # ── In-memory cache ───────────────────────────────────────────────────────────
@@ -104,6 +156,11 @@ def warm_cache() -> None:
         build_front_month_parquet()
     print("Loading es_front_month.parquet into memory …")
     df = pd.read_parquet(FRONT_MONTH_PATH)
+    # Rebuild if adj_offset column is missing (parquet created before this feature)
+    if "adj_offset" not in df.columns:
+        print("adj_offset column missing — rebuilding front-month parquet …")
+        build_front_month_parquet()
+        df = pd.read_parquet(FRONT_MONTH_PATH)
     df["ts_event"] = pd.to_datetime(df["ts_event"], utc=True)
     df = df.set_index("ts_event").sort_index()
     _cache = df
@@ -135,9 +192,12 @@ def get_candles(
     timeframe: str = "5",
     start: str | None = None,
     end: str | None = None,
+    adjusted: bool = False,
 ) -> list[dict]:
     """
     Return OHLCV candles. start/end are ET calendar dates.
+    When adjusted=True, additive back-adjustment is applied so prices are
+    continuous across roll dates (TradingView style).
     Served from in-memory cache — fast after first load.
     """
     df = _get_cache()
@@ -160,8 +220,19 @@ def get_candles(
     minutes = parse_timeframe(timeframe)
     rule    = "D" if minutes is None else f"{minutes}min"
 
+    # Apply back-adjustment offset to OHLC before resampling
+    cols = ["open", "high", "low", "close", "volume"]
+    if adjusted and "adj_offset" in df.columns:
+        df = df[cols + ["adj_offset"]].copy()
+        df["open"]  = df["open"]  + df["adj_offset"]
+        df["high"]  = df["high"]  + df["adj_offset"]
+        df["low"]   = df["low"]   + df["adj_offset"]
+        df["close"] = df["close"] + df["adj_offset"]
+        df_et = df[cols].copy()
+    else:
+        df_et = df[cols].copy()
+
     # Resample in ET so bar boundaries align with TradingView
-    df_et = df[["open", "high", "low", "close", "volume"]].copy()
     df_et.index = df_et.index.tz_convert("America/New_York")
 
     agg = (

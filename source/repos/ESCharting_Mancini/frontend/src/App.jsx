@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import './App.css'
 import Chart from './components/Chart'
 import TradeList from './components/TradeList'
@@ -49,6 +49,8 @@ const DEFAULT_SETTINGS = {
   scaleMarginBottom: 0.1,
 }
 
+const API_BASE = 'http://localhost:8000'
+
 export default function App() {
   const chartRef = useRef(null)
   const [leftOpen,      setLeftOpen]      = useState(true)
@@ -63,6 +65,20 @@ export default function App() {
   const [settings,      setSettings]      = useState(DEFAULT_SETTINGS)
   const [showSettings,  setShowSettings]  = useState(false)
   const [dateRange,     setDateRange]     = useState({ start: '2026-03-10', end: '2026-03-25' })
+  const [levelsData,    setLevelsData]    = useState(null)   // {date, supports, resistances}
+  const [levelsDate,    setLevelsDate]    = useState(null)   // null = use latest
+  const [levelsVisible, setLevelsVisible] = useState(true)
+
+  // ── Fetch levels whenever levelsDate changes ─────────────────────────────
+  // null means "latest available", but cap at DATA_END so we don't show
+  // levels for dates beyond the chart data we actually have.
+  useEffect(() => {
+    const date = levelsDate ?? DATA_END
+    fetch(`${API_BASE}/levels?date=${date}`)
+      .then(r => r.json())
+      .then(data => setLevelsData(data.date ? data : null))
+      .catch(() => setLevelsData(null))
+  }, [levelsDate])
 
   // Data bounds from the parquet — used to clamp trade navigation range
   const DATA_START = '2016-03-29'
@@ -78,6 +94,8 @@ export default function App() {
     setSelectedTrade(trade.id)
     setSelectedTradeData(trade)
     setFocusDate(trade.entry_date)
+    setLevelsDate(trade.entry_date)   // auto-load levels for this trade's date
+    setAdjMode('non-adj')             // levels are non-adjusted; switch mode to match
 
     // ±6 months around the trade date, clamped to available data
     const base  = new Date(trade.entry_date + 'T12:00:00Z')
@@ -168,7 +186,7 @@ export default function App() {
             <div className="toolbar-sep" />
 
             {/* Reset view */}
-            <button className="tf-btn" title="Reset view (fit all)" onClick={() => chartRef.current?.resetView()}>
+            <button className="tf-btn" title="Reset view (fit all)" onClick={() => { chartRef.current?.resetView(); setLevelsDate(null) }}>
               ⊡
             </button>
             <div className="toolbar-sep" />
@@ -186,7 +204,7 @@ export default function App() {
           </div>
 
           <div className="chart-container">
-            <Chart ref={chartRef} timeframe={timeframe} settings={settings} dateRange={dateRange} focusDate={focusDate} tradeData={selectedTradeData} />
+            <Chart ref={chartRef} timeframe={timeframe} settings={settings} dateRange={dateRange} focusDate={focusDate} tradeData={selectedTradeData} adjMode={adjMode} levels={levelsVisible ? levelsData : null} />
           </div>
         </div>
 
@@ -203,7 +221,7 @@ export default function App() {
           className={`right-panel${rightOpen ? '' : ' collapsed'}`}
           style={rightOpen ? { width: rightWidth } : undefined}
         >
-          {rightOpen && <LevelsPanel selectedTrade={selectedTrade} selectedDate={dateRange.start} />}
+          {rightOpen && <LevelsPanel selectedTrade={selectedTrade} selectedDate={dateRange.start} tradeData={selectedTradeData} levelsData={levelsData} levelsDate={levelsDate} onLevelsDateChange={setLevelsDate} onLevelsSaved={setLevelsData} levelsVisible={levelsVisible} onLevelsVisibleChange={setLevelsVisible} />}
           <button
             className="right-panel-toggle"
             onClick={() => setRightOpen(o => !o)}
@@ -223,6 +241,9 @@ export default function App() {
         </div>
         <div className="status-item">
           <span>Mode: {adjMode === 'adj' ? 'Adjusted' : 'Non-Adjusted'}</span>
+        </div>
+        <div className="status-item">
+          <span>Levels: {levelsData?.date ?? '—'}</span>
         </div>
         <div className="status-item">
           <span>Timeframe: {timeframe}</span>

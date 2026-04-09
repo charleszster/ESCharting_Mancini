@@ -60,10 +60,18 @@ Single user, Windows, 1080p, light theme.
 - [x] Trade markers on chart — custom LWC v5 primitive (TradeMarkersPrimitive), arrows pinned to exact entry/exit price, white halo + label background for visibility
 - [x] Marker label font size configurable (⚙ Markers tab, default 11px, range 8–20px)
 - [x] Crosshair modes: Snap to close (default), Snap to OHLC (custom price line), Free, Hidden
-- [ ] Trade detail in right panel (Step 6)
-- [ ] Level lines on chart
-- [ ] Right panel levels fully wired up
-- [ ] Adjusted/non-adjusted toggle (Non-Adj wired, Adjusted back-adjustment not yet implemented)
+- [x] Trade detail in right panel — entry/exit rows, gross/commission/net P&L, duration, multi-exit + cross-day support; "Planning Mode" placeholder when no trade selected
+- [x] Adjusted/non-adjusted toggle — adj_offset computed at roll boundaries in es_front_month.parquet using contemporaneous spreads (both contracts at same timestamp); Adj button re-fetches with ?adjusted=true; Non-Adj is default; status bar shows current mode; validated against TV MES1! daily closes (MAD ~1.2 pts, within-period drift ~0)
+- [x] Level lines on chart — green supports / red resistances, solid=major / dashed=minor, label on chart at right edge, one date at a time
+- [x] Levels sourced from data/levels.db (SQLite, imported once from Excel via import_levels.py, 221 rows 2025-03-07 to 2026-04-06)
+- [x] Default levels capped at DATA_END (2026-03-25) so no phantom future levels show
+- [x] Trade click auto-loads levels for that trade date AND forces non-adjusted mode
+- [x] Reset button restores latest levels (capped at DATA_END)
+- [x] Levels date picker in right panel; "latest" button resets to DATA_END; matched date shown below picker and in status bar
+- [x] Levels editable via right-panel textareas (raw string format); Save button PUTs to /levels and updates chart immediately
+- [x] "Save to date" input lets user change the target date — handles both editing existing entries and adding new ones; view switches to saved date after save
+- [x] Levels visible toggle in Layers section — hides/shows all level lines without losing date selection
+- [x] "Re-import from Excel" button calls POST /levels/reimport — re-reads the Excel file and upserts all rows; shows count + latest date on completion
 - [ ] Auto level generation (30-min bars, Mancini Pine Script logic)
 - [ ] Databento download modal
 
@@ -74,11 +82,16 @@ Single user, Windows, 1080p, light theme.
 - After fix: max 10pt diff vs TV (was ±51pt), 8 bars in 3264 differ slightly (feed noise)
 
 ## What's next
-- Step 6: Trade detail in right panel — entry/exit breakdown, P&L, commission
-- Step 7: Adjusted mode — additive back-adjustment at each roll date
-- Step 8: Adjusted mode — additive back-adjustment at each roll date
+- Step 8: (done — add/edit/toggle/reimport all complete)
 - Step 9: Auto level generation (Mancini Pine Script logic on 30-min bars)
-- Step 10: Level lines drawn on chart from SQLite
+- Step 10: Databento download modal
+
+## Active bug (as of 2026-04-09)
+- **Textareas not clearing when picking a date not in the DB** (e.g. 4/7/2026)
+  - When user picks a new date in the Levels date picker, the resistance/support textareas should go blank (to signal "new entry"), but they still show the previous date's data
+  - Two fix attempts failed; a `console.log` was added to the useEffect in `LevelsPanel.jsx` to diagnose
+  - Need to open browser DevTools (F12 → Console), pick 4/7/2026, and report what `[LevelsPanel effect]` logs show for `levelsDate`, `levelsData.date`, and `exactMatch`
+  - The fix attempts are in the current useEffect and onChange handler in `LevelsPanel.jsx`
 
 ## Known issues / gotchas
 - CSV column is `volume` (no typo)

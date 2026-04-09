@@ -2,9 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from data_manager import get_candles, parse_timeframe, warm_cache
 from trades_manager import get_trades
+from levels_manager import get_available_dates, get_levels, save_levels, reimport_from_excel
 
 
 @asynccontextmanager
@@ -39,15 +41,50 @@ def trades():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/levels/dates")
+def levels_dates():
+    return {"dates": get_available_dates()}
+
+
+@app.get("/levels")
+def levels(date: str | None = Query(default=None, description="ET date, e.g. 2026-04-06")):
+    return get_levels(date)
+
+
+class LevelsSave(BaseModel):
+    date: str
+    supports_raw: str
+    resistances_raw: str
+
+
+@app.put("/levels")
+def levels_save(body: LevelsSave):
+    try:
+        return save_levels(body.date, body.supports_raw, body.resistances_raw)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/levels/reimport")
+def levels_reimport():
+    try:
+        return reimport_from_excel()
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/candles")
 def candles(
-    timeframe: str = Query(default="5", description="Timeframe in minutes or 'D'"),
+    timeframe: str  = Query(default="5",    description="Timeframe in minutes or 'D'"),
     start: str | None = Query(default=None, description="ET date, e.g. 2025-01-01"),
     end:   str | None = Query(default=None, description="ET date, e.g. 2025-01-31"),
+    adjusted: bool  = Query(default=False,  description="Apply additive back-adjustment"),
 ):
     try:
         parse_timeframe(timeframe)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    data = get_candles(timeframe=timeframe, start=start, end=end)
-    return {"timeframe": timeframe, "count": len(data), "candles": data}
+    data = get_candles(timeframe=timeframe, start=start, end=end, adjusted=adjusted)
+    return {"timeframe": timeframe, "adjusted": adjusted, "count": len(data), "candles": data}
