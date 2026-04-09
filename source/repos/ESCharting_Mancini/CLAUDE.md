@@ -75,6 +75,9 @@ Single user, Windows, 1080p, light theme.
 - [x] Databento download modal — "Download data" button in topbar opens modal; cost estimate + confirm step; SSE streaming progress; appends to es_1m.parquet (dedup), rebuilds es_front_month.parquet, updates dataEnd in App state; backend: downloader.py + /download/estimate + /download/stream endpoints; chart dateRange.end updates automatically on success
 - [x] Databento download end-date handling — adds 1 day to make end inclusive; caps at Databento's available end (get_dataset_range) to avoid 422 errors from pipeline lag (~8hr lag observed on overnight data; RTH lag TBD)
 - [x] ETH shading fix — SessionHighlight.js now clamps band endpoints to chart edges instead of dropping the band when timeToCoordinate returns null (was cutting off overnight shading at last data bar)
+- [x] start.bat at project root — double-click launches backend + frontend; browser auto-opens at localhost:5173 via Vite server.open
+- [x] Default chart date range — fetched from GET /candles/bounds on mount (reads actual parquet min/max); shows 6 months before actual data end; no longer hardcoded
+- [x] Default crosshair mode — Snap to OHLC (mode 3); was Snap to close (mode 1)
 - [ ] Auto level generation (30-min bars, Mancini Pine Script logic)
 
 ## Roll calendar rule
