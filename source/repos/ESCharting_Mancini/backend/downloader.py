@@ -50,7 +50,10 @@ def _client():
 # Databento's 422 error for exceeding available data includes the actual
 # available end timestamp.  We parse it and retry rather than relying on
 # get_dataset_range(), which returns a conservative (stale) value.
-_AVAIL_END_RE = _re.compile(r"available up to '([^']+)'")
+# Matches two Databento error formats:
+#   422: "available up to '2026-04-09 21:00:00+00:00'"
+#   422: "end time before 2026-04-09T13:15:49.396997000Z"
+_AVAIL_END_RE = _re.compile(r"available up to '([^']+)'|end time before (\S+)")
 
 
 def _desired_end(end: str) -> str:
@@ -83,7 +86,7 @@ def _get_estimate_sync(start: str, end: str) -> dict:
     except Exception as exc:
         m = _AVAIL_END_RE.search(str(exc))
         if m:
-            return _try(pd.Timestamp(m.group(1)).isoformat())
+            return _try(pd.Timestamp(m.group(1) or m.group(2)).isoformat())
         raise
 
 
@@ -107,7 +110,7 @@ def _download_sync(start: str, end: str) -> pd.DataFrame:
     except Exception as exc:
         m = _AVAIL_END_RE.search(str(exc))
         if m:
-            return _try(pd.Timestamp(m.group(1)).isoformat())
+            return _try(pd.Timestamp(m.group(1) or m.group(2)).isoformat())
         raise
 
 
