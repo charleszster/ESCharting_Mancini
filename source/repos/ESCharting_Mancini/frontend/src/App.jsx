@@ -38,7 +38,7 @@ const DEFAULT_SETTINGS = {
   volDownColor: '#ef5350',
   volHeightPct: 0.15,
   // Crosshair
-  crosshairMode:  1,
+  crosshairMode:  3,
   crosshairColor: '#9598a1',
   crosshairWidth: 1,
   // Markers
@@ -66,15 +66,22 @@ export default function App() {
   const [settings,      setSettings]      = useState(DEFAULT_SETTINGS)
   const [showSettings,  setShowSettings]  = useState(false)
   const [showDownload,  setShowDownload]  = useState(false)
-  const [dateRange,     setDateRange]     = useState({ start: '2026-03-10', end: '2026-03-25' })
-  const [levelsData,    setLevelsData]    = useState(null)   // {date, supports, resistances}
-  const [levelsDate,    setLevelsDate]    = useState(null)   // null = use latest
-  const [levelsVisible, setLevelsVisible] = useState(true)
 
-  // Data bounds from the parquet — used to clamp trade navigation range.
+  // Data bounds — dataEnd declared early so dateRange can use it as initial value.
   // dataEnd is state so it updates after a successful Databento download.
   const DATA_START = '2016-03-29'
   const [dataEnd,  setDataEnd]  = useState('2026-03-25')
+
+  const [dateRange, setDateRange] = useState(() => {
+    const end   = new Date('2026-03-25T12:00:00Z')
+    const start = new Date(end)
+    start.setUTCMonth(start.getUTCMonth() - 6)
+    return { start: start.toISOString().slice(0, 10), end: '2026-03-25' }
+  })
+
+  const [levelsData,    setLevelsData]    = useState(null)   // {date, supports, resistances}
+  const [levelsDate,    setLevelsDate]    = useState(null)   // null = use latest
+  const [levelsVisible, setLevelsVisible] = useState(true)
 
   // ── Fetch levels whenever levelsDate changes ─────────────────────────────
   // null means "latest available", but cap at dataEnd so we don't show
