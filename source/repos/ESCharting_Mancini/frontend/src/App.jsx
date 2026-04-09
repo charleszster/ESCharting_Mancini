@@ -236,7 +236,7 @@ export default function App() {
       <div className="topbar">
         <span className="topbar-title">ES Trade Analyzer</span>
         <div className="topbar-actions">
-          <button onClick={() => setShowDownload(true)}>Import data</button>
+          <button onClick={() => setShowDownload(true)}>Download data</button>
           <button>Settings</button>
         </div>
       </div>
