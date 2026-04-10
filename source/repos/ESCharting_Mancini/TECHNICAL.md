@@ -267,13 +267,17 @@ is_major = bounce >= maj_bounce OR touches >= maj_touches
 
 ### 8. Frontend Architecture
 
-**Root** (`App.jsx`): Manages all global state — selected trade, date range, adjusted mode, levels, timeframe, chart settings. Passes data down as props; events bubble up via callbacks.
+**Root** (`App.jsx`): Manages all global state — selected trade, batch view, date range, adjusted mode, levels, timeframe, chart settings. Trades are fetched here (not in TradeList) so BatchPanel and TradeList share one request. Passes data down as props; events bubble up via callbacks.
+
+**Batch View** (`BatchPanel.jsx`): Collapsible section at the top of the left panel. Filters trades by date range and winner/loser status, computes a chart window (first entry −28 cal days → last exit +28 cal days, clamped to data bounds), and passes the filtered trade list to Chart for simultaneous marker rendering. Clicking any trade in the list exits batch mode.
 
 **Chart** (`Chart.jsx`): Creates and manages the LWC chart instance. Handles:
 - Fetching candle data from `/candles`
 - Rendering trade markers, level lines, and session highlights via custom primitives
 - Crosshair mode switching
 - Zoom-to-trade on trade click
+
+**Reset view** (`Chart.jsx: resetToLatest`): The ⊡ button pins the last data bar at 120px from the right edge and sizes the view to show exactly `RESET_BARS` (270) bars. Formula: `barPx = (containerWidth − 120) / 270`, then `setVisibleLogicalRange({ from: lastBar − 269, to: lastBar + padBars })`. Both constants live at the top of the fit/reset section in Chart.jsx.
 
 **Custom LWC v5 Primitives** (in `frontend/src/lib/`): LWC v5 introduced the Primitive API for canvas drawing. Three primitives are registered as series-attached plugins:
 

@@ -168,6 +168,7 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
 
   // ── Fit content + fixed pixel right margin ──────────────────────────────
   const RIGHT_MARGIN_PX = 120
+  const RESET_BARS      = 270   // bars shown by the reset button
 
   function fitWithPadding() {
     const ts = chartRef.current.timeScale()
@@ -181,12 +182,30 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     ts.setVisibleLogicalRange({ from: range.from, to: range.to + padBars })
   }
 
+  // Pin the latest bar at RIGHT_MARGIN_PX from the right and show RESET_BARS bars.
+  // barPx = (containerWidth - RIGHT_MARGIN_PX) / RESET_BARS  →  solve for padBars
+  function resetToLatest() {
+    if (!chartRef.current || !candleRef.current) return
+    const ts      = chartRef.current.timeScale()
+    const candles = candleRef.current.data?.() ?? []
+    if (!candles.length) { ts.fitContent(); return }
+
+    const lastBar = candles.length - 1
+    const width   = containerRef.current?.clientWidth ?? 800
+    const barPx   = (width - RIGHT_MARGIN_PX) / RESET_BARS
+    const padBars = Math.max(1, Math.round(RIGHT_MARGIN_PX / barPx))
+
+    ts.setVisibleLogicalRange({
+      from: lastBar - RESET_BARS + 1,
+      to:   lastBar + padBars,
+    })
+  }
+
   // ── Expose reset to parent ───────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
     resetView() {
-      if (!chartRef.current) return
-      fitWithPadding()
-      chartRef.current.priceScale('right').applyOptions({ autoScale: true })
+      resetToLatest()
+      chartRef.current?.priceScale('right').applyOptions({ autoScale: true })
     }
   }))
 
