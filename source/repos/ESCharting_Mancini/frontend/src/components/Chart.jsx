@@ -146,11 +146,26 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
 
   const tf = toBackendTf(timeframe)
 
+  // ── Fit content + fixed pixel right margin ──────────────────────────────
+  const RIGHT_MARGIN_PX = 120
+
+  function fitWithPadding() {
+    const ts = chartRef.current.timeScale()
+    ts.fitContent()
+    const range = ts.getVisibleLogicalRange()
+    if (!range) return
+    const width = containerRef.current.clientWidth
+    const barsVisible = range.to - range.from
+    const barPx = width / barsVisible
+    const padBars = Math.max(1, Math.round(RIGHT_MARGIN_PX / barPx))
+    ts.setVisibleLogicalRange({ from: range.from, to: range.to + padBars })
+  }
+
   // ── Expose reset to parent ───────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
     resetView() {
       if (!chartRef.current) return
-      chartRef.current.timeScale().fitContent()
+      fitWithPadding()
       chartRef.current.priceScale('right').applyOptions({ autoScale: true })
     }
   }))
@@ -482,7 +497,7 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
             to:   tradeTs + 3  * 86400,
           })
         } else {
-          chartRef.current.timeScale().fitContent()
+          fitWithPadding()
         }
 
         // Apply trade markers (or clear if none selected)

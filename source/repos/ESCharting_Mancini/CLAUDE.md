@@ -35,59 +35,15 @@ Single user, Windows, 1080p, light theme.
 - Location: US Eastern Time
 - Databento API key: stored in .env (user fills in manually)
 
-## Current state
-- [x] Project scaffolded
-- [x] Chart visible with hardcoded data — full UI shell complete
-- [x] Real Parquet data loading (es_1m.parquet, 5.5M rows, 2016–2026)
-- [x] GET /candles endpoint with timeframe aggregation
-- [x] Chart fetches real ES data, loading overlay while fetching
-- [x] Timeframe selector buttons wired to re-fetch
-- [x] TV roll calendar (Monday of expiry week at 18:00 ET) — max 10pt diff vs TV
-- [x] ET timezone display on chart axis and crosshair
-- [x] Date range picker treats dates as ET midnight
-- [x] OHLCV hover tooltip (absolute positioned, top-left of chart)
-- [x] ETH/RTH session shading (configurable color, opacity, mode)
-- [x] Full chart settings modal (6 tabs: Candles, Grid, Sessions, Volume, Scales, Crosshair)
-- [x] TV-style UI (dark border palette, accent colors, toggle switches)
-- [x] Performance: pre-processed es_front_month.parquet + in-memory RAM cache
-- [x] Reset view button in toolbar (fitContent + auto-scale price axis)
-- [x] GET /trades endpoint — reads Excel read-only via openpyxl
-- [x] Trade list in left panel: date, L/S, P/L, entry→exit times, contract count (2-line rows)
-- [x] Clicking a trade loads ±6 months of data and zooms chart to 7 days before / 3 days after trade date
-- [x] Left and right panels resizable by dragging border
-- [x] Both panels collapsible (left: bottom toggle, right: bottom toggle)
-- [x] Trade log path/sheet configured via .env (TRADES_FILE, TRADES_SHEET)
-- [x] Trade markers on chart — custom LWC v5 primitive (TradeMarkersPrimitive), arrows pinned to exact entry/exit price, white halo + label background for visibility
-- [x] Marker label font size configurable (⚙ Markers tab, default 11px, range 8–20px)
-- [x] Crosshair modes: Snap to close (default), Snap to OHLC (custom price line), Free, Hidden
-- [x] Trade detail in right panel — entry/exit rows, gross/commission/net P&L, duration, multi-exit + cross-day support; "Planning Mode" placeholder when no trade selected
-- [x] Adjusted/non-adjusted toggle — adj_offset computed at roll boundaries in es_front_month.parquet using contemporaneous spreads (both contracts at same timestamp); Adj button re-fetches with ?adjusted=true; Non-Adj is default; status bar shows current mode; validated against TV MES1! daily closes (MAD ~1.2 pts, within-period drift ~0)
-- [x] Level lines on chart — green supports / red resistances, solid=major / dashed=minor, label on chart at right edge, one date at a time
-- [x] Levels sourced from data/levels.db (SQLite, imported once from Excel via import_levels.py, 221 rows 2025-03-07 to 2026-04-06)
-- [x] Default levels — GET /levels with no date param returns most recent DB entry (no DATA_END cap needed)
-- [x] Trade click auto-loads levels for that trade date AND forces non-adjusted mode
-- [x] Reset button restores latest levels (most recent DB entry)
-- [x] Levels date picker in right panel; "latest" button resets to most recent DB entry; matched date shown below picker and in status bar
-- [x] Levels editable via right-panel textareas (raw string format); Save button PUTs to /levels and updates chart immediately
-- [x] "Save to date" input lets user change the target date — handles both editing existing entries and adding new ones; view switches to saved date after save
-- [x] Levels visible — manual and auto toggles in Layers section (no master toggle); chart receives merged result
-- [x] "Re-import from Excel" button calls POST /levels/reimport — re-reads the Excel file and upserts all rows; shows count + latest date on completion
-- [x] Databento download modal — "Download data" button in topbar opens modal; cost estimate + confirm step; SSE streaming progress; appends to es_1m.parquet (dedup), rebuilds es_front_month.parquet, updates dataEnd in App state; backend: downloader.py + /download/estimate + /download/stream endpoints; chart dateRange.end updates automatically on success
-- [x] Databento download end-date handling — adds 1 day to make end inclusive; uses try/retry approach: attempt desired end, if Databento 422s with "available up to 'TIMESTAMP'", parse that timestamp and retry; get_dataset_range() removed (returned stale/conservative end, got data only to 9am ET when 4pm ET was actually available)
-- [x] ETH shading fix — SessionHighlight.js now clamps band endpoints to chart edges instead of dropping the band when timeToCoordinate returns null (was cutting off overnight shading at last data bar)
-- [x] start.bat at project root — double-click launches backend + frontend; browser auto-opens at localhost:5173 via Vite server.open
-- [x] Default chart date range — fetched from GET /candles/bounds on mount (reads actual parquet min/max); shows 6 months before actual data end; no longer hardcoded
-- [x] Default crosshair mode — Snap to OHLC (mode 3); was Snap to close (mode 1)
-- [x] Level labels on chart — LevelLabelsPrimitive (custom LWC v5 canvas primitive); colored text at right edge, no background box by default; font size 9px default
-- [x] Range levels drawn as zones — price_lo/price_hi returned from backend; two boundary lines drawn (at lo and hi, not midpoint); translucent fill between them (10% opacity default); backend _parse_token handles 4+2-digit shorthand (e.g. 6766-70 → 6766/6770)
-- [x] Level label/zone settings in ⚙ Markers tab — font size slider, color box toggle, show zones toggle, zone opacity slider
-- [x] Auto level generation — GET /levels/auto; backend: auto_levels.py (15-min bars, numpy vectorised pivots, bounce/touch/major logic); "Generate auto levels" button + date picker in right panel; auto levels displayed in read-only collapsible section; manual and auto levels each have independent on/off toggles; all params configurable in ⚙ Auto Levels tab
-- [x] Auto levels date picker — date = the day levels are FOR (prior trading day's 4pm is the anchor); Monday picks Friday's 4pm automatically
-- [x] Manual levels default date — now calls GET /levels with no date param on mount, returning most recent DB entry instead of stale hardcoded DATA_END
-- [x] ETH shading fix (Sunday gap) — SessionHighlight.js rewritten to shade gaps *between* RTH windows rather than UTC calendar days; fixes 6–8 PM ET Sunday showing as unshaded because UTC-midnight timestamps in trading gaps return null from timeToCoordinate
-- [x] start.bat — 2-window approach: backend in separate cmd window, frontend in bat window; Ctrl+C kills frontend then auto-kills backend
-- [x] TradingView CSV import — "Download data" modal has a second tab "TradingView CSV"; accepts MES1!/ES1! 1-min OHLC export (no volume needed); assigns correct ES front-month symbol from roll calendar; deduplicates against existing parquet; rebuilds cache; workaround for Databento's ~13hr pipeline lag
-- [x] Databento download retry loop — handles two successive 422s (pipeline limit then subscription limit) by walking down through parsed available-end timestamps; requires python-multipart in venv
+## Feature summary
+All core features are complete as of Apr 2026. Key capabilities:
+- Candlestick chart with real ES 1-min data (2016–2026), multi-timeframe aggregation
+- Trade list (left panel) + detail (right panel), markers on chart, clicking a trade zooms chart
+- Manual and auto support/resistance levels, both editable/toggleable
+- Adjusted/non-adjusted price mode toggle (additive back-adjustment, TV-compatible)
+- Databento data download (SSE streaming, retry loop for 422s) and TradingView CSV import
+- ETH/RTH session shading, full chart settings modal (7 tabs), crosshair modes
+- start.bat launches both backend and frontend; browser opens at localhost:5173
 
 ## Roll calendar rule
 - Roll at 18:00 ET on the Monday of the expiry week (= 3rd Friday of expiry month − 4 days)
@@ -99,7 +55,7 @@ Single user, Windows, 1080p, light theme.
 - Step 10: Analyze and tune auto level parameters vs Mancini's published levels (ongoing experiment)
 
 ## Auto level generation methodology
-Derived from Mancini Pine Script v5.3, adapted and corrected. Not yet implemented in Python.
+Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `backend/auto_levels.py`.
 
 ### Anchor
 - Aggregate 1-min parquet data into 15-min bars
