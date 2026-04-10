@@ -345,7 +345,7 @@ export default function App() {
             <div className="toolbar-sep" />
 
             {/* Reset view */}
-            <button className="tf-btn" title="Reset view (fit all)" onClick={() => { chartRef.current?.resetView(); setLevelsDate(null) }}>
+            <button className="tf-btn" title="Reset view" onClick={() => { chartRef.current?.resetView(); setLevelsDate(null) }}>
               ⊡
             </button>
             <div className="toolbar-sep" />

@@ -14,7 +14,7 @@ function clampDate(d, lo, hi) {
 
 export default function BatchPanel({ trades, dataStart, dataEnd, active, onShow, onClear }) {
   const [collapsed, setCollapsed] = useState(false)
-  const [filter,    setFilter]    = useState('all')   // 'all' | 'winners' | 'losers'
+  const [filter,    setFilter]    = useState(null)    // null | 'all' | 'winners' | 'losers'
   const [fromDate,  setFromDate]  = useState('')
   const [toDate,    setToDate]    = useState('')
   const [noResults, setNoResults] = useState(false)
@@ -33,7 +33,7 @@ export default function BatchPanel({ trades, dataStart, dataEnd, active, onShow,
       .filter(t => {
         if (filter === 'winners') return t.net_pnl > 0
         if (filter === 'losers')  return t.net_pnl < 0
-        return true
+        return true   // null or 'all' → show everything
       })
 
     if (!filtered.length) { setNoResults(true); return }
@@ -54,6 +54,7 @@ export default function BatchPanel({ trades, dataStart, dataEnd, active, onShow,
 
   function handleClear() {
     setNoResults(false)
+    setFilter(null)
     onClear()
   }
 
@@ -95,7 +96,7 @@ export default function BatchPanel({ trades, dataStart, dataEnd, active, onShow,
           {noResults && <div className="batch-no-results">No trades match</div>}
 
           <div className="batch-action-row">
-            <button className="batch-show-btn" onClick={handleShow} disabled={!canShow}>
+            <button className={`batch-show-btn${active ? ' batch-show-active' : ''}`} onClick={handleShow} disabled={!canShow}>
               Show on chart
             </button>
             <button className="batch-clear-btn" onClick={handleClear}>
