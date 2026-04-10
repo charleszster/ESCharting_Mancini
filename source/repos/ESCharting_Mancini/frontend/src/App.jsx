@@ -386,9 +386,14 @@ export default function App() {
           endTs={endTs}
           onClose={() => setShowDownload(false)}
           onSuccess={newEnd => {
-            setDataEnd(newEnd)
-            setEndTs(null)   // clear so modal falls back to nextDay(newEnd) after next download
             setDateRange(r => ({ ...r, end: newEnd }))
+            fetch(`${API_BASE}/candles/bounds`)
+              .then(r => r.json())
+              .then(({ end, end_ts }) => {
+                setDataEnd(end)
+                if (end_ts) setEndTs(end_ts)
+              })
+              .catch(() => setDataEnd(newEnd))
           }}
         />
       )}
