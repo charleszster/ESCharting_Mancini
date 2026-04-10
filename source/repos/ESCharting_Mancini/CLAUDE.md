@@ -132,6 +132,7 @@ Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `ba
 - Databento pipeline lag: subscription tier has ~13hr lag (data available up to ~10:54am ET when downloaded at 7pm ET); two successive 422s occur: first "data_end_after_available_end" (pipeline limit), then "dataset_unavailable_range" (subscription cap); downloader loops up to 4 times backing off 1 min each time
 - TradingView CSV export: MES1! or ES1!, 1-min, columns: time/open/high/low/close (no volume); timestamps in ISO-8601 with UTC offset; use as same-day stopgap after 4pm close; TV shows volume in the table view and claims to export all data, but volume column is absent from the downloaded CSV — volume=0 is set on import (irrelevant for auto levels and chart display)
 - Download modal "From" field: read-only, auto-set to the exact UTC timestamp of the last bar in the parquet (from /candles/bounds end_ts). This is sent verbatim to Databento so only truly new bars are fetched. Previously used nextDay(dataEnd) which rounded to UTC midnight and could cause hours of overlap; also had a race condition where the modal could initialize before /candles/bounds resolved, defaulting to 2026-03-25.
+- Download modal "Done" message shows exact ET timestamp of last downloaded bar (e.g. "Done — data through 4/10/2026, 3:08 PM ET"), not just the date.
 - databento Python package: v0.74.1 installed in venv
 - start.bat corruption: `venv\Scripts\activate` was corrupted to `vnot bpts\activate` at some point — if backend fails to start, check start.bat
 

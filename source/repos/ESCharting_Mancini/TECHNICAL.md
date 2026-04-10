@@ -247,7 +247,7 @@ is_major = bounce >= maj_bounce OR touches >= maj_touches
 
 **Retry loop** (`_resolve_end`): Databento returns HTTP 422 when the requested end date exceeds what's available. The error message contains the actual available end timestamp. The downloader parses this, backs off by 1 minute, and retries — up to 4 times. Two successive 422s are common: first the pipeline lag limit, then the subscription tier cap.
 
-**SSE streaming** (`stream_download`): The `/download/stream` endpoint is an async generator that yields `data: {...}\n\n` JSON lines. Stages: connect → download → append → rebuild → done/error. The frontend uses `EventSource` to consume this.
+**SSE streaming** (`stream_download`): The `/download/stream` endpoint is an async generator that yields `data: {...}\n\n` JSON lines. Stages: connect → download → append → rebuild → done/error. The frontend uses `EventSource` to consume this. The "done" message includes both `end_date` (YYYY-MM-DD) and `end_ts` (exact UTC ISO timestamp of the last downloaded bar); the modal displays the latter formatted in ET.
 
 **Precise start timestamp**: The download modal receives `end_ts` (exact UTC ISO timestamp of the last bar, e.g. `2026-04-09T23:00:00Z`) from `/candles/bounds` and passes it verbatim as the `start` parameter to Databento. This avoids paying for bars that already exist in the parquet — previously the start was rounded to the next calendar day (UTC midnight), which could overlap by hours. Both the estimate and stream endpoints accept either a `YYYY-MM-DD` date or an exact UTC timestamp as `start`.
 
