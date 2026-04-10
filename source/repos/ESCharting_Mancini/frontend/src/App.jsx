@@ -89,6 +89,7 @@ export default function App() {
   // Hardcoded fallback used only until the fetch completes.
   const DATA_START = '2016-03-29'
   const [dataEnd,   setDataEnd]  = useState('2026-03-25')
+  const [endTs,     setEndTs]    = useState(null)   // exact UTC timestamp of last bar
   const [dateRange, setDateRange] = useState(() => {
     const end   = new Date('2026-03-25T12:00:00Z')
     const start = new Date(end)
@@ -100,8 +101,9 @@ export default function App() {
   useEffect(() => {
     fetch(`${API_BASE}/candles/bounds`)
       .then(r => r.json())
-      .then(({ end }) => {
+      .then(({ end, end_ts }) => {
         setDataEnd(end)
+        if (end_ts) setEndTs(end_ts)
         setDateRange(r => {
           const endDate   = new Date(end + 'T12:00:00Z')
           const startDate = new Date(endDate)
@@ -381,9 +383,11 @@ export default function App() {
       {showDownload && (
         <DownloadModal
           dataEnd={dataEnd}
+          endTs={endTs}
           onClose={() => setShowDownload(false)}
           onSuccess={newEnd => {
             setDataEnd(newEnd)
+            setEndTs(null)   // clear so modal falls back to nextDay(newEnd) after next download
             setDateRange(r => ({ ...r, end: newEnd }))
           }}
         />

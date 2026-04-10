@@ -177,11 +177,14 @@ def _get_cache() -> pd.DataFrame:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def get_data_bounds() -> dict:
-    """Return the actual min/max ET dates in the front-month cache."""
+    """Return the actual min/max ET dates in the front-month cache, plus the
+    exact UTC timestamp of the last bar so the downloader can use a precise start."""
     df = _get_cache()
+    last_ts = df.index.max()  # already UTC-aware
     return {
-        "start": df.index.min().tz_convert("America/New_York").strftime("%Y-%m-%d"),
-        "end":   df.index.max().tz_convert("America/New_York").strftime("%Y-%m-%d"),
+        "start":  df.index.min().tz_convert("America/New_York").strftime("%Y-%m-%d"),
+        "end":    last_ts.tz_convert("America/New_York").strftime("%Y-%m-%d"),
+        "end_ts": last_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),  # e.g. 2026-04-09T23:00:00Z
     }
 
 

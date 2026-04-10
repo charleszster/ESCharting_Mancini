@@ -87,6 +87,7 @@ def _resolve_end(fn_try, end_str: str, label: str):
 
 
 def _get_estimate_sync(start: str, end: str) -> dict:
+    """start may be an ET calendar date or an exact UTC timestamp."""
     client = _client()
 
     def _try(e):
@@ -104,7 +105,8 @@ def _get_estimate_sync(start: str, end: str) -> dict:
 
 
 def _download_sync(start: str, end: str) -> pd.DataFrame:
-    """start/end are ET calendar dates (YYYY-MM-DD)."""
+    """start may be an ET calendar date (YYYY-MM-DD) or an exact UTC timestamp
+    (e.g. 2026-04-09T23:00:00Z).  end is always an ET calendar date."""
     client = _client()
 
     def _try(e):

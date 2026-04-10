@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 const API_BASE = 'http://localhost:8000'
 
@@ -16,29 +16,52 @@ function fmtBytes(b) {
 
 // ── Databento tab ─────────────────────────────────────────────────────────────
 
-function DatabentoTab({ dataEnd, onSuccess }) {
+// Format a UTC ISO timestamp (2026-04-09T23:00:00Z) for display in ET.
+function fmtEndTs(endTs) {
+  if (!endTs) return null
+  const d = new Date(endTs)
+  return d.toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    month: 'numeric', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  }) + ' ET'
+}
+
+function DatabentoTab({ dataEnd, endTs, onSuccess }) {
   const today = new Date().toISOString().slice(0, 10)
 
-  const [startDate,  setStartDate]  = useState(nextDay(dataEnd))
-  const [endDate,    setEndDate]    = useState(today)
-  const [phase,      setPhase]      = useState('idle')
-  const [estimate,   setEstimate]   = useState(null)
-  const [messages,   setMessages]   = useState([])
-  const [error,      setError]      = useState(null)
-  const [newEndDate, setNewEndDate] = useState(null)
+  // startParam: exact UTC timestamp of last bar, or nextDay(dataEnd) as fallback.
+  // Read-only — user never changes it; only "To" is editable.
+  const [startParam,  setStartParam]  = useState(null)
+  const [endDate,     setEndDate]     = useState(today)
+  const [phase,         setPhase]         = useState('idle')
+  const [estimate,      setEstimate]      = useState(null)
+  const [messages,      setMessages]      = useState([])
+  const [error,         setError]         = useState(null)
+  const [newEndDate,    setNewEndDate]     = useState(null)
 
   const esRef   = useRef(null)
   const doneRef = useRef(false)
+
+  // Sync startParam from endTs once /candles/bounds resolves.
+  // useEffect (not useState initializer) avoids the race where the modal
+  // mounts before the fetch completes.
+  useEffect(() => {
+    if (phase !== 'idle') return
+    setStartParam(endTs ?? nextDay(dataEnd))
+  }, [endTs, dataEnd])  // eslint-disable-line react-hooks/exhaustive-deps
 
   function resetToIdle() {
     setPhase('idle'); setEstimate(null); setError(null)
     setMessages([]); doneRef.current = false
   }
 
+  const effectiveStart = startParam ?? nextDay(dataEnd)
+
   async function handleEstimate() {
     setPhase('estimating'); setError(null)
     try {
-      const res = await fetch(`${API_BASE}/download/estimate?start=${startDate}&end=${endDate}`)
+      const res = await fetch(`${API_BASE}/download/estimate?start=${encodeURIComponent(effectiveStart)}&end=${endDate}`)
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.detail ?? `HTTP ${res.status}`)
@@ -50,7 +73,7 @@ function DatabentoTab({ dataEnd, onSuccess }) {
 
   function handleConfirm() {
     setPhase('downloading'); setMessages([]); doneRef.current = false
-    const es = new EventSource(`${API_BASE}/download/stream?start=${startDate}&end=${endDate}`)
+    const es = new EventSource(`${API_BASE}/download/stream?start=${encodeURIComponent(effectiveStart)}&end=${endDate}`)
     esRef.current = es
     es.onmessage = (e) => {
       const data = JSON.parse(e.data)
@@ -75,22 +98,20 @@ function DatabentoTab({ dataEnd, onSuccess }) {
     }
   }
 
-  const canEstimate = startDate && endDate && startDate <= endDate
+  const canEstimate = effectiveStart && endDate && effectiveStart <= endDate
 
   return (
     <>
       <div className="dl-body">
         <div className="dl-current-range">
-          Current data: <strong>2016-03-29 → {dataEnd}</strong>
+          Current data: <strong>2016-03-29 → {fmtEndTs(endTs) ?? dataEnd}</strong>
         </div>
 
         {(phase === 'idle' || phase === 'estimating' || phase === 'confirm') && (
           <div className="dl-date-section">
             <div className="dl-row">
               <span className="dl-label">From</span>
-              <input type="date" className="date-input" value={startDate}
-                disabled={phase !== 'idle'}
-                onChange={e => { setStartDate(e.target.value); resetToIdle() }} />
+              <span className="dl-readonly">{fmtEndTs(endTs) ?? effectiveStart}</span>
             </div>
             <div className="dl-row">
               <span className="dl-label">To</span>
@@ -242,7 +263,7 @@ function TradingViewTab({ onSuccess }) {
 
 // ── Modal shell ───────────────────────────────────────────────────────────────
 
-export default function DownloadModal({ dataEnd, onClose, onSuccess }) {
+export default function DownloadModal({ dataEnd, endTs, onClose, onSuccess }) {
   const [tab, setTab] = useState('databento')
 
   function handleSuccess(newEnd) {
@@ -264,7 +285,7 @@ export default function DownloadModal({ dataEnd, onClose, onSuccess }) {
           <button className={`dl-tab${tab === 'tradingview' ? ' active' : ''}`} onClick={() => setTab('tradingview')}>TradingView CSV</button>
         </div>
 
-        {tab === 'databento'   && <DatabentoTab   dataEnd={dataEnd} onSuccess={handleSuccess} />}
+        {tab === 'databento'   && <DatabentoTab   dataEnd={dataEnd} endTs={endTs} onSuccess={handleSuccess} />}
         {tab === 'tradingview' && <TradingViewTab               onSuccess={handleSuccess} />}
 
       </div>

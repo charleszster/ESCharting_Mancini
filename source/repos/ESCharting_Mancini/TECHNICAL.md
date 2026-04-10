@@ -66,7 +66,7 @@ ESCharting_Mancini/
 | Method | Path | Description |
 |---|---|---|
 | GET | `/` | Health check |
-| GET | `/candles/bounds` | Actual min/max dates in parquet |
+| GET | `/candles/bounds` | Actual min/max dates in parquet + exact UTC timestamp of last bar (`end_ts`) |
 | GET | `/candles` | OHLCV candles — params: `timeframe`, `start`, `end`, `adjusted` |
 | GET | `/trades` | All trades from Excel, newest-first |
 | GET | `/levels` | Manual levels for a date (or most recent if no date) |
@@ -248,6 +248,8 @@ is_major = bounce >= maj_bounce OR touches >= maj_touches
 **Retry loop** (`_resolve_end`): Databento returns HTTP 422 when the requested end date exceeds what's available. The error message contains the actual available end timestamp. The downloader parses this, backs off by 1 minute, and retries — up to 4 times. Two successive 422s are common: first the pipeline lag limit, then the subscription tier cap.
 
 **SSE streaming** (`stream_download`): The `/download/stream` endpoint is an async generator that yields `data: {...}\n\n` JSON lines. Stages: connect → download → append → rebuild → done/error. The frontend uses `EventSource` to consume this.
+
+**Precise start timestamp**: The download modal receives `end_ts` (exact UTC ISO timestamp of the last bar, e.g. `2026-04-09T23:00:00Z`) from `/candles/bounds` and passes it verbatim as the `start` parameter to Databento. This avoids paying for bars that already exist in the parquet — previously the start was rounded to the next calendar day (UTC midnight), which could overlap by hours. Both the estimate and stream endpoints accept either a `YYYY-MM-DD` date or an exact UTC timestamp as `start`.
 
 **Append + dedup**: New data is concatenated with existing parquet and deduplicated on `(ts_event, symbol)` before writing. Front-month parquet is then rebuilt from scratch.
 

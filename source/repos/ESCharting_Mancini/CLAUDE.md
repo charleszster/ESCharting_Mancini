@@ -41,7 +41,7 @@ All core features are complete as of Apr 2026. Key capabilities:
 - Trade list (left panel) + detail (right panel), markers on chart, clicking a trade zooms chart
 - Manual and auto support/resistance levels, both editable/toggleable
 - Adjusted/non-adjusted price mode toggle (additive back-adjustment, TV-compatible)
-- Databento data download (SSE streaming, retry loop for 422s) and TradingView CSV import
+- Databento data download (SSE streaming, retry loop for 422s, precise start timestamp to avoid redundant rows) and TradingView CSV import
 - ETH/RTH session shading, full chart settings modal (7 tabs), crosshair modes
 - start.bat launches both backend and frontend; browser opens at localhost:5173
 
@@ -131,6 +131,7 @@ Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `ba
 - Data bounds: DATA_START='2016-03-29' is a const in App.jsx; DATA_END is now useState('2026-03-25') so it updates after a successful download
 - Databento pipeline lag: subscription tier has ~13hr lag (data available up to ~10:54am ET when downloaded at 7pm ET); two successive 422s occur: first "data_end_after_available_end" (pipeline limit), then "dataset_unavailable_range" (subscription cap); downloader loops up to 4 times backing off 1 min each time
 - TradingView CSV export: MES1! or ES1!, 1-min, columns: time/open/high/low/close (no volume); timestamps in ISO-8601 with UTC offset; use as same-day stopgap after 4pm close; TV shows volume in the table view and claims to export all data, but volume column is absent from the downloaded CSV — volume=0 is set on import (irrelevant for auto levels and chart display)
+- Download modal "From" field: read-only, auto-set to the exact UTC timestamp of the last bar in the parquet (from /candles/bounds end_ts). This is sent verbatim to Databento so only truly new bars are fetched. Previously used nextDay(dataEnd) which rounded to UTC midnight and could cause hours of overlap; also had a race condition where the modal could initialize before /candles/bounds resolved, defaulting to 2026-03-25.
 - databento Python package: v0.74.1 installed in venv
 - start.bat corruption: `venv\Scripts\activate` was corrupted to `vnot bpts\activate` at some point — if backend fails to start, check start.bat
 
