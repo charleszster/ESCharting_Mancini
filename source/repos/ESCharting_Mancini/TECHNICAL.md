@@ -269,7 +269,7 @@ is_major = bounce >= maj_bounce OR touches >= maj_touches
 
 **Root** (`App.jsx`): Manages all global state — selected trade, batch view, date range, adjusted mode, levels, timeframe, chart settings. Trades are fetched here (not in TradeList) so BatchPanel and TradeList share one request. Passes data down as props; events bubble up via callbacks.
 
-**Batch View** (`BatchPanel.jsx`): Collapsible section at the top of the left panel. Filters trades by date range and winner/loser status, computes a chart window (first entry −28 cal days → last exit +28 cal days, clamped to data bounds), and passes the filtered trade list to Chart for simultaneous marker rendering. Clicking any trade in the list exits batch mode.
+**Batch View** (`BatchPanel.jsx`): Collapsible section at the top of the left panel. Filters trades by date range and winner/loser status (`net_pnl > 0` / `< 0`; `null` filter = all). Computes a chart window (first entry −28 cal days → last exit +28 cal days, clamped to data bounds) and passes the filtered list to Chart for simultaneous marker rendering via `applyBatchMarkers`. Filter buttons start unlit and reset to unlit on Clear. "Show on chart" is a neutral bordered button; turns blue when batch mode is active. Clicking any trade in the list exits batch mode.
 
 **Chart** (`Chart.jsx`): Creates and manages the LWC chart instance. Handles:
 - Fetching candle data from `/candles`

@@ -39,7 +39,7 @@ Single user, Windows, 1080p, light theme.
 All core features are complete as of Apr 2026. Key capabilities:
 - Candlestick chart with real ES 1-min data (2016–2026), multi-timeframe aggregation
 - Trade list (left panel) + detail (right panel), markers on chart, clicking a trade zooms chart
-- **Batch view** (top of left panel): show all trades in a date range simultaneously; filter by All / Winners / Losers; chart auto-spans first entry −28 days to last exit +28 days; clicking a trade exits batch mode and zooms to it
+- **Batch view** (top of left panel): show all trades in a date range simultaneously; filter by All / Winners / Losers (unlit until selected, clear to unlit on Clear); "Show on chart" is neutral until active, then turns blue; chart auto-spans first entry −28 days to last exit +28 days; clicking a trade exits batch mode and zooms to it
 - Manual and auto support/resistance levels, both editable/toggleable
 - Adjusted/non-adjusted price mode toggle (additive back-adjustment, TV-compatible)
 - Databento data download (SSE streaming, retry loop for 422s, precise start timestamp to avoid redundant rows) and TradingView CSV import
