@@ -106,7 +106,6 @@ function applyMarkers(primitive, series, trade) {
   const raw = buildMarkers(trade, candles)   // [{time, price, ...}] from the old builder
 
   // Convert to TradeMarkersPrimitive format
-  const isLong = trade.direction === 'long'
   const markers = raw.map(m => ({
     time:      m.time,
     price:     parseFloat(m.text),           // text held the price string
@@ -115,6 +114,27 @@ function applyMarkers(primitive, series, trade) {
     label:     m.text,
   }))
   primitive.setMarkers(markers)
+}
+
+function applyBatchMarkers(primitive, series, trades) {
+  if (!primitive) return
+  if (!trades || !trades.length) { primitive.clearMarkers(); return }
+  const candles = series?.data?.() ?? []
+  const allMarkers = []
+  for (const trade of trades) {
+    const raw = buildMarkers(trade, candles)
+    for (const m of raw) {
+      allMarkers.push({
+        time:      m.time,
+        price:     parseFloat(m.text),
+        direction: m.shape === 'arrowUp' ? 'up' : 'down',
+        color:     m.color,
+        label:     m.text,
+      })
+    }
+  }
+  allMarkers.sort((a, b) => a.time - b.time)
+  primitive.setMarkers(allMarkers)
 }
 
 function toBackendTf(tf) {
@@ -126,7 +146,7 @@ function toBackendTf(tf) {
   return tf
 }
 
-const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange, focusDate, tradeData, adjMode = 'non-adj', levels = null }, ref) {
+const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange, focusDate, tradeData, batchTrades = null, adjMode = 'non-adj', levels = null }, ref) {
   const containerRef   = useRef(null)
   const chartRef         = useRef(null)
   const candleRef        = useRef(null)   // candlestick series
@@ -417,11 +437,15 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     })
   }, [chartReady, settings.levelFontSize, settings.levelShowBox, settings.levelShowZones, settings.levelZoneOpacity])
 
-  // ── Trade markers (handles deselect / trade switch without re-fetch) ─────
+  // ── Trade markers (single-trade and batch mode) ──────────────────────────
   useEffect(() => {
     if (!chartReady) return
-    applyMarkers(markersRef.current, candleRef.current, tradeData)
-  }, [chartReady, tradeData])
+    if (batchTrades && batchTrades.length > 0) {
+      applyBatchMarkers(markersRef.current, candleRef.current, batchTrades)
+    } else {
+      applyMarkers(markersRef.current, candleRef.current, tradeData)
+    }
+  }, [chartReady, tradeData, batchTrades])
 
   // ── Level lines ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -501,7 +525,11 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
         }
 
         // Apply trade markers (or clear if none selected)
-        applyMarkers(markersRef.current, candleRef.current, tradeData)
+        if (batchTrades && batchTrades.length > 0) {
+          applyBatchMarkers(markersRef.current, candleRef.current, batchTrades)
+        } else {
+          applyMarkers(markersRef.current, candleRef.current, tradeData)
+        }
 
         // Populate volume histogram if visible
         if (volRef.current && settings.showVolume) {

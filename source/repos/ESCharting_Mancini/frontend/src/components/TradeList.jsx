@@ -1,19 +1,4 @@
-import { useEffect, useState } from 'react'
-
-const API_BASE = 'http://localhost:8000'
-
-export default function TradeList({ selectedId, onSelect }) {
-  const [trades,  setTrades]  = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState(null)
-
-  useEffect(() => {
-    fetch(`${API_BASE}/trades`)
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-      .then(data => { setTrades(data.trades); setLoading(false) })
-      .catch(err => { setError(err.message); setLoading(false) })
-  }, [])
-
+export default function TradeList({ trades, loading, error, selectedId, onSelect }) {
   return (
     <>
       <div className="left-panel-header">

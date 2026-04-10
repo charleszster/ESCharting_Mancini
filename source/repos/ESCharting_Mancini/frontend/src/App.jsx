@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import './App.css'
 import Chart from './components/Chart'
 import TradeList from './components/TradeList'
+import BatchPanel from './components/BatchPanel'
 import TimeframeSelector from './components/TimeframeSelector'
 import LevelsPanel from './components/LevelsPanel'
 import ChartSettings from './components/ChartSettings'
@@ -78,9 +79,18 @@ export default function App() {
   const [rightWidth,    setRightWidth]    = useState(270)
   const [timeframe,     setTimeframe]     = useState('5m')
   const [adjMode,       setAdjMode]       = useState('non-adj')
+  // Trades — fetched here so BatchPanel and TradeList share the same data
+  const [trades,        setTrades]        = useState([])
+  const [tradesLoading, setTradesLoading] = useState(true)
+  const [tradesError,   setTradesError]   = useState(null)
+
   const [selectedTrade,     setSelectedTrade]     = useState(null)
   const [selectedTradeData, setSelectedTradeData] = useState(null)
   const [focusDate,         setFocusDate]         = useState(null)
+
+  // Batch view
+  const [batchMode,   setBatchMode]   = useState(false)
+  const [batchTrades, setBatchTrades] = useState([])
   const [settings,      setSettings]      = useState(DEFAULT_SETTINGS)
   const [showSettings,  setShowSettings]  = useState(false)
   const [showDownload,  setShowDownload]  = useState(false)
@@ -112,6 +122,13 @@ export default function App() {
         })
       })
       .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch(`${API_BASE}/trades`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(data => { setTrades(data.trades); setTradesLoading(false) })
+      .catch(err => { setTradesError(err.message); setTradesLoading(false) })
   }, [])
 
   const [levelsData,       setLevelsData]       = useState(null)  // manual levels
@@ -192,7 +209,25 @@ export default function App() {
     return d.toISOString().slice(0, 10)
   }
 
+  function handleBatchShow(filtered, chartStart, chartEnd) {
+    setBatchMode(true)
+    setBatchTrades(filtered)
+    setSelectedTrade(null)
+    setSelectedTradeData(null)
+    setFocusDate(null)
+    setDateRange({ start: chartStart, end: chartEnd })
+  }
+
+  function handleBatchClear() {
+    setBatchMode(false)
+    setBatchTrades([])
+  }
+
   function handleTradeSelect(trade) {
+    // Clicking a trade always exits batch mode
+    setBatchMode(false)
+    setBatchTrades([])
+
     if (selectedTrade === trade.id) {
       setSelectedTrade(null)
       setSelectedTradeData(null)
@@ -250,7 +285,23 @@ export default function App() {
           className={`left-panel${leftOpen ? '' : ' collapsed'}`}
           style={leftOpen ? { width: leftWidth } : undefined}
         >
-          {leftOpen && <TradeList selectedId={selectedTrade} onSelect={handleTradeSelect} />}
+          {leftOpen && <>
+            <BatchPanel
+              trades={trades}
+              dataStart={DATA_START}
+              dataEnd={dataEnd}
+              active={batchMode}
+              onShow={handleBatchShow}
+              onClear={handleBatchClear}
+            />
+            <TradeList
+              trades={trades}
+              loading={tradesLoading}
+              error={tradesError}
+              selectedId={selectedTrade}
+              onSelect={handleTradeSelect}
+            />
+          </>}
           <button
             className="left-panel-toggle"
             onClick={() => setLeftOpen(o => !o)}
@@ -312,7 +363,7 @@ export default function App() {
           </div>
 
           <div className="chart-container">
-            <Chart ref={chartRef} timeframe={timeframe} settings={settings} dateRange={dateRange} focusDate={focusDate} tradeData={selectedTradeData} adjMode={adjMode} levels={mergedLevels} />
+            <Chart ref={chartRef} timeframe={timeframe} settings={settings} dateRange={dateRange} focusDate={focusDate} tradeData={batchMode ? null : selectedTradeData} batchTrades={batchMode ? batchTrades : null} adjMode={adjMode} levels={mergedLevels} />
           </div>
         </div>
 
