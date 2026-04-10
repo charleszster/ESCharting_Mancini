@@ -244,15 +244,17 @@ async def stream_download(start: str, end: str):
         df = await loop.run_in_executor(_executor, _download_sync, start, end)
         n_rows = len(df)
 
-        # Capture last date before we hand df off to the append worker
+        # Capture last timestamp before we hand df off to the append worker
         ts_col = df.index if df.index.name == "ts_event" else df.get("ts_event")
         if ts_col is not None and len(ts_col) > 0:
             last = pd.Timestamp(ts_col.max())
             if last.tzinfo is None:
                 last = last.tz_localize("UTC")
-            new_end = last.tz_convert("UTC").strftime("%Y-%m-%d")
+            new_end    = last.tz_convert("UTC").strftime("%Y-%m-%d")
+            new_end_ts = last.strftime("%Y-%m-%dT%H:%M:%SZ")
         else:
-            new_end = end
+            new_end    = end
+            new_end_ts = None
 
         yield msg("progress", f"Downloaded {n_rows:,} rows. Appending to parquet...")
         new_rows = await loop.run_in_executor(_executor, _append_to_parquet, df)
@@ -262,7 +264,8 @@ async def stream_download(start: str, end: str):
 
         yield msg("done",
                   f"Done — {new_rows:,} new rows through {new_end}",
-                  end_date=new_end)
+                  end_date=new_end,
+                  end_ts=new_end_ts)
 
     except Exception as e:
         yield msg("error", str(e))

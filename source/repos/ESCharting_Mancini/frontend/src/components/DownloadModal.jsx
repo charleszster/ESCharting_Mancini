@@ -39,6 +39,7 @@ function DatabentoTab({ dataEnd, endTs, onSuccess }) {
   const [messages,      setMessages]      = useState([])
   const [error,         setError]         = useState(null)
   const [newEndDate,    setNewEndDate]     = useState(null)
+  const [newEndTs,      setNewEndTs]       = useState(null)
 
   const esRef   = useRef(null)
   const doneRef = useRef(false)
@@ -83,6 +84,7 @@ function DatabentoTab({ dataEnd, endTs, onSuccess }) {
         doneRef.current = true
         setMessages(m => [...m, data.msg])
         setNewEndDate(data.end_date)
+        setNewEndTs(data.end_ts ?? null)
         setPhase('done')
         es.close(); esRef.current = null
         if (data.end_date) onSuccess(data.end_date)
@@ -162,7 +164,7 @@ function DatabentoTab({ dataEnd, endTs, onSuccess }) {
         )}
         {phase === 'done' && (
           <div className="dl-log-line dl-log-done" style={{ padding: '6px 0' }}>
-            Done{newEndDate ? ` — data through ${newEndDate}` : ''}
+            Done{newEndTs ? ` — data through ${fmtEndTs(newEndTs)}` : newEndDate ? ` — data through ${newEndDate}` : ''}
           </div>
         )}
         {phase === 'error' && (
