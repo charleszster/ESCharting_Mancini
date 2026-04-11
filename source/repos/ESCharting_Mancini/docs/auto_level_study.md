@@ -476,3 +476,130 @@ This captures the insight that steep trendlines are unreliable as exact price ta
 ### Script plan
 `backend/analysis_phase6.py` — feature extraction + model training + evaluation
 `backend/feature_builder.py` — standalone feature matrix builder (reusable)
+
+---
+
+## Phase 6a — Results
+**Date:** 2026-04-11
+**Script:** `backend/analysis_phase6.py`
+
+### Nearest-neighbour relabelling (critical fix)
+Raw label positive rate: 60.8% — when ~1000 candidates/day each check against 107 Mancini
+levels with ±2pt tolerance, ~60% fall near some level. Too noisy for ML.
+Fix: for each Mancini level, only the single closest candidate within ±2pts gets label=1.
+Result: 12,069 positives / 178,303 rows = 6.8% positive rate, 55.9/day.
+
+### Split
+- Train: 172 dates (121,095 rows, 7.5% positive)
+- Test: 44 dates (57,208 rows, 5.2% positive)
+
+### Feature importance
+
+| Feature | Importance |
+|---|---|
+| touches | 0.210 |
+| dist_d5 | 0.116 |
+| pivot_type | 0.091 |
+| local_density | 0.075 |
+| dist_from_4pm | 0.069 |
+| clean_departure | 0.052 |
+| dist_d50 | 0.049 |
+| vol_zscore | 0.047 |
+| bounce | 0.047 |
+| dist_d100 | 0.042 |
+| prominence | 0.042 |
+| dist_d25 | 0.041 |
+| consolidation | 0.039 |
+| recency_rank | 0.033 |
+| days_since_pivot | 0.028 |
+| is_support | 0.020 |
+
+### Threshold sweep (test set)
+
+| threshold | prec | rec | f1 | levels/day |
+|---|---|---|---|---|
+| 0.05 | 5.8% | 99.3% | 11.0% | 1167.0 |
+| 0.10 | 6.8% | 97.0% | 12.8% | 967.8 |
+| 0.20 | 9.1% | 87.9% | 16.5% | 657.1 |
+| 0.30 | 11.8% | 75.8% | 20.3% | 440.0 |
+| 0.40 | 14.4% | 62.1% | 23.4% | 294.4 |
+| **0.50** | **18.7%** | **49.7%** | **27.2%** | **181.0** |
+
+Best F1: thr=0.50; avg ML recall/day=50.5%, avg ML levels/day=181.0, avg Mancini/day=68.2
+
+### Root cause analysis
+Pool size ~1000 candidates/day with ~55 true positives (5.5% base rate).
+Even a perfect discriminator can't achieve high precision from a 1-in-18 base rate
+when the pool is that large. Precision ceiling ~18% is structural, not a model problem.
+Solution: shrink candidate pool before training.
+
+---
+
+## Phase 6b — Round 2: New Features + 3-Fold CV
+**Date:** 2026-04-11
+**Script:** `backend/analysis_phase6b.py`
+
+### New features added
+- `sr_flip`: did this level previously serve the opposite role (support-became-resistance or vice versa)?
+- `price_crossings`: how many times did close cross through this price level historically?
+- `is_mult5`: binary flag — rounded price is a multiple of 5
+- `dist_round_to_mult5`: distance from rounded price to nearest mult-of-5
+
+### Key findings
+
+**Round-number features collectively important:** dist_d5 (#2) + dist_round_to_mult5 + is_mult5
+together contribute ~0.205 importance — equal to touches (#1). Strong confirmation that Mancini
+weights multiples of 5. However, blind rounding to nearest mult-of-5 is wrong — not all his
+levels are multiples of 5. The model learns the nuance from labeled data.
+
+**sr_flip surprisingly weak (importance 0.028):** Implementation uses raw bar highs/lows in a
+500-bar lookback window — triggers too easily and is too noisy. Better approach: check whether
+actual pivot highs/lows (confirmed with N-bar confirmation) exist near the price. Flagged for Phase 6c.
+
+### CV results (3-fold expanding window)
+
+| Fold | Test period | thr=0.50 prec | rec | f1 |
+|---|---|---|---|---|
+| 1 | Earlier period | 18.1% | 62.9% | 28.1% |
+| 2 | Dec 2025–Apr 2026 (ATH + selloff) | 18.2% | 43.8% | 25.7% |
+
+**Distribution shift confirmed:** Fold 2 (ATH regime + sharp selloff of Apr 2026) generalizes
+worse than Fold 1. The model trained on 2025 data doesn't transfer as well to the ATH/selloff
+regime. This is expected — Mancini's level placement changes character in extreme market conditions.
+
+### Precision ceiling unchanged (~18%)
+Adding new features did not break the ceiling. Root cause is structural: pool size ~1000/day.
+Feature engineering alone cannot fix this. Must reduce pool size.
+
+---
+
+## Phase 6c — Planned: Candidate Pool Reduction
+**Date:** planned
+**Script:** `backend/analysis_phase6c.py` + updated `backend/feature_builder.py`
+
+### Motivation
+Precision ceiling of ~18% is structural: ~1000 candidates/day, ~55 positives = 5.5% base rate.
+To achieve >30% precision while keeping recall >60%, need to reduce pool to ~100–200 candidates.
+
+### Strategy 1: Recency filter
+Only include pivot candidates from the last N days (e.g., 365 days).
+- Parameter: `max_pivot_age_days` in feature_builder
+- Hypothesis: Old pivots (>1yr) contribute noise; Mancini focuses on recent structure
+- Expected effect: pool shrinks proportionally to how many old pivots exist
+
+### Strategy 2: Significance filter
+For each lookback window, keep only the top N pivot highs and top N pivot lows by swing quality.
+- Rank pivots by `prominence * bounce` (structural significance)
+- Only the top N per window enter the candidate pool
+- Hypothesis: Mancini picks structurally prominent pivots, not all detected pivots
+
+### Improved sr_flip
+Replace raw-bar lookback with actual confirmed pivot check:
+- Check whether any confirmed pivot high (from `_find_pivots`) is near the price (for a pivot low)
+- Check whether any confirmed pivot low is near the price (for a pivot high)
+- This reduces false positives from noisy bar data
+
+### Target outcome
+Pool: 100–200 candidates/day
+Base rate: 55 positives / 150 candidates = 37%
+Expected precision ceiling: significantly higher than 18%
