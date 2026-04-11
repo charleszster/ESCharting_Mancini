@@ -71,12 +71,12 @@ def levels_save(body: LevelsSave):
 @app.get("/levels/auto")
 def levels_auto(
     pivot_len:        int   = Query(default=5,     ge=2,   le=20),
-    price_range:      float = Query(default=250.0, ge=50,  le=2000),
+    price_range:      float = Query(default=325.0, ge=50,  le=2000),
     min_spacing:      float = Query(default=3.0,   ge=0.25, le=20),
     touch_zone:       float = Query(default=2.0,   ge=0.25, le=10),
     maj_bounce:       float = Query(default=40.0,  ge=5,   le=200),
-    maj_touches:      int   = Query(default=5,     ge=1,   le=30),
-    forward_bars:     int   = Query(default=100,   ge=10,  le=500),
+    maj_touches:      int   = Query(default=12,    ge=1,   le=30),
+    forward_bars:     int   = Query(default=10,    ge=2,   le=500),
     show_major_only:  bool        = Query(default=False),
     show_supports:    bool        = Query(default=True),
     show_resistances: bool        = Query(default=True),
