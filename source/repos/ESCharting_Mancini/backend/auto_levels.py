@@ -198,12 +198,14 @@ def compute_auto_levels(
         if show_major_only and not is_major:
             continue
 
-        label = f"{p:.2f}".rstrip('0').rstrip('.')
+        # Round to nearest whole number — Mancini never uses fractional points.
+        p_rounded = round(p)
+        label = str(p_rounded)
 
         accepted.append({
-            'price':    round(p, 2),
-            'price_lo': round(p, 2),
-            'price_hi': round(p, 2),
+            'price':    p_rounded,
+            'price_lo': p_rounded,
+            'price_hi': p_rounded,
             'major':    is_major,
             'label':    label,
             'is_res':   is_res,
