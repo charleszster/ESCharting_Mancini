@@ -54,7 +54,14 @@ All core features are complete as of Apr 2026. Key capabilities:
 - After fix: max 10pt diff vs TV (was ±51pt), 8 bars in 3264 differ slightly (feed noise)
 
 ## What's next
-- Step 10: Auto level ML classifier (Phase 6) — see research doc and memory for full plan
+- Step 10: Auto level ML classifier (Phase 6) — research complete through Phase 6d; decision point reached
+  - Phases 6a/6b: baseline XGBoost classifier, precision ceiling ~18% (structural, from 825-candidate pool)
+  - Phases 6c/6d: candidate pool reduction via significance filter (top N by prominence*bounce from in-range pool)
+    - sig_inrange_50: 45% precision, F1=54%, 52 levels/day
+    - sig_inrange_30: 50% precision, F1=56%, 32 levels/day
+  - Decision needed: (A) match Mancini (use wide pool, low threshold, accept 18% precision)
+    vs (B) own high-confidence system (sig_inrange_30/50, 45-50% precision, 32-52 levels/day)
+  - See docs/auto_level_study.md and memory for full results
 
 ## Auto level generation methodology
 Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `backend/auto_levels.py`.
