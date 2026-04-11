@@ -240,32 +240,40 @@ def build_feature_matrix(verbose=True,
             ph_idx = ph_idx[ph_keep]; ph_p = ph_p[ph_keep]
             pl_idx = pl_idx[pl_keep]; pl_p = pl_p[pl_keep]
 
-        # ── Significance filter ───────────────────────────────────────────────
-        # Keep only top_n_per_window pivot highs and lows by swing quality.
+        # ── Price-range pre-filter ────────────────────────────────────────────
+        # Always filter to price_range BEFORE significance scoring so that the
+        # significance filter selects the best N from the *relevant zone*, not
+        # from all of history (which spans thousands of points of ES price).
+        ph_in = np.array([abs(float(p) - close4pm) <= PRICE_RANGE for p in ph_p], dtype=bool)
+        pl_in = np.array([abs(float(p) - close4pm) <= PRICE_RANGE for p in pl_p], dtype=bool)
+        ph_idx_r = ph_idx[ph_in]; ph_p_r = ph_p[ph_in]
+        pl_idx_r = pl_idx[pl_in]; pl_p_r = pl_p[pl_in]
+
+        # ── Significance filter (applied to price-range-filtered pool) ────────
+        # Keep only the top N pivot highs and top N pivot lows by swing quality
+        # (prominence * bounce) from within the relevant price zone.
         if top_n_per_window is not None and top_n_per_window > 0:
-            if len(ph_idx) > top_n_per_window:
+            if len(ph_idx_r) > top_n_per_window:
                 scores_h = np.array([
                     _pivot_swing_quality(highs_hist, lows_hist, i, 'high', PIVOT_LEN, sig_window)
-                    for i in ph_idx
+                    for i in ph_idx_r
                 ])
                 top_h = np.argsort(scores_h)[-top_n_per_window:]
-                ph_idx = ph_idx[top_h]; ph_p = ph_p[top_h]
-            if len(pl_idx) > top_n_per_window:
+                ph_idx_r = ph_idx_r[top_h]; ph_p_r = ph_p_r[top_h]
+            if len(pl_idx_r) > top_n_per_window:
                 scores_l = np.array([
                     _pivot_swing_quality(highs_hist, lows_hist, i, 'low', PIVOT_LEN, sig_window)
-                    for i in pl_idx
+                    for i in pl_idx_r
                 ])
                 top_l = np.argsort(scores_l)[-top_n_per_window:]
-                pl_idx = pl_idx[top_l]; pl_p = pl_p[top_l]
+                pl_idx_r = pl_idx_r[top_l]; pl_p_r = pl_p_r[top_l]
 
-        # Collect all candidates within price_range
+        # Collect candidates (already price-range filtered; possibly significance-filtered)
         candidates = []
-        for idx, price in zip(ph_idx, ph_p):
-            if abs(float(price) - close4pm) <= PRICE_RANGE:
-                candidates.append((int(idx), float(price), 'high'))
-        for idx, price in zip(pl_idx, pl_p):
-            if abs(float(price) - close4pm) <= PRICE_RANGE:
-                candidates.append((int(idx), float(price), 'low'))
+        for idx, price in zip(ph_idx_r, ph_p_r):
+            candidates.append((int(idx), float(price), 'high'))
+        for idx, price in zip(pl_idx_r, pl_p_r):
+            candidates.append((int(idx), float(price), 'low'))
 
         if not candidates:
             continue
@@ -276,7 +284,9 @@ def build_feature_matrix(verbose=True,
         # Per-day average volume for normalisation
         day_vol_mean = float(vols_all[hist_mask].mean()) or 1.0
 
-        # Touch arrays (all historical pivots, not just in price_range)
+        # Touch counting and sr_flip use the full recency-filtered pivot set
+        # (not significance-filtered) so counts reflect all historical tests.
+        # ph_p / pl_p are still the recency-filtered (but pre-significance) arrays.
         touch_ph_p = ph_p
         touch_pl_p = pl_p
 

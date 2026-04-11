@@ -573,33 +573,89 @@ Feature engineering alone cannot fix this. Must reduce pool size.
 
 ---
 
-## Phase 6c — Planned: Candidate Pool Reduction
-**Date:** planned
-**Script:** `backend/analysis_phase6c.py` + updated `backend/feature_builder.py`
+## Phase 6c — Candidate Pool Reduction (Filter Order Bug)
+**Date:** 2026-04-11
+**Script:** `backend/analysis_phase6c.py`
 
-### Motivation
-Precision ceiling of ~18% is structural: ~1000 candidates/day, ~55 positives = 5.5% base rate.
-To achieve >30% precision while keeping recall >60%, need to reduce pool to ~100–200 candidates.
+### Strategies tested
+1. **Recency filter** (`max_pivot_age_days`): drop pivots older than N days
+2. **Significance filter** (`top_n_per_window`): keep top N by prominence×bounce
+3. Improved sr_flip: confirmed pivot arrays instead of raw bar h/l (implemented in feature_builder)
 
-### Strategy 1: Recency filter
-Only include pivot candidates from the last N days (e.g., 365 days).
-- Parameter: `max_pivot_age_days` in feature_builder
-- Hypothesis: Old pivots (>1yr) contribute noise; Mancini focuses on recent structure
-- Expected effect: pool shrinks proportionally to how many old pivots exist
+### Results (thr=0.50, avg across folds)
 
-### Strategy 2: Significance filter
-For each lookback window, keep only the top N pivot highs and top N pivot lows by swing quality.
-- Rank pivots by `prominence * bounce` (structural significance)
-- Only the top N per window enter the candidate pool
-- Hypothesis: Mancini picks structurally prominent pivots, not all detected pivots
+| Config | Cand/day | Pos% | Prec | Rec | F1 | Lvls/day |
+|---|---|---|---|---|---|---|
+| baseline | 825 | 6.8% | 17.8% | 54.0% | 26.6% | 172 |
+| recency_365d | 822 | 6.8% | 17.8% | 53.6% | 26.6% | 170 |
+| recency_180d | 673 | 7.9% | 21.6% | 43.0% | 28.6% | 109 |
+| sig_top50 (buggy) | 5 | 54.3% | 55.5% | 61.9% | 57.9% | 5 |
+| rec365_sig50 (buggy) | 17 | 50.1% | 66.9% | 69.6% | 68.2% | 9 |
+| rec180_sig30 (buggy) | 27 | 48.5% | 59.5% | 61.8% | 60.5% | 17 |
 
-### Improved sr_flip
-Replace raw-bar lookback with actual confirmed pivot check:
-- Check whether any confirmed pivot high (from `_find_pivots`) is near the price (for a pivot low)
-- Check whether any confirmed pivot low is near the price (for a pivot high)
-- This reduces false positives from noisy bar data
+### Critical bug discovered
+Significance filter was selecting top-N globally from all of history, THEN applying
+the ±325pt price_range filter. The globally top-50 pivots span the entire 2-year
+ES price range (3000+ pts); only 5–17 happened to be within ±325pts of current price.
+This accidentally created excellent F1 (68-60%) by making the pool tiny, but with only
+5–17 candidates/day vs Mancini's 55/day, absolute coverage was ~12–30%.
 
-### Target outcome
-Pool: 100–200 candidates/day
-Base rate: 55 positives / 150 candidates = 37%
-Expected precision ceiling: significantly higher than 18%
+**Fix (Phase 6d):** apply price_range filter FIRST, then significance filter picks top N
+from the ~825 in-range candidates.
+
+### sr_flip improvement confirmed
+In rec180_sig30, sr_flip jumped to #1 importance at 0.239 (was 0.028 in baseline).
+The confirmed-pivot implementation provides genuine signal when the pool is curated.
+
+---
+
+## Phase 6d — Fixed In-Range Significance Filter
+**Date:** 2026-04-11
+**Script:** `backend/analysis_phase6d.py`
+
+### Fix implemented
+`feature_builder.py` updated: price_range filter applied before significance selection.
+`sig_inrange_50` = keep top 50 pivot highs + top 50 pivot lows from the ~825 candidates
+already within ±325pts of current price.
+
+### Results (thr=0.50, avg across folds)
+
+| Config | Cand/day | Pos% | Prec | Rec (in-pool) | F1 | Lvls/day |
+|---|---|---|---|---|---|---|
+| sig_inrange_100 | 200 | 22.5% | 36.2% | 59.4% | 44.9% | 78 |
+| sig_inrange_75 | 150 | 26.8% | 39.4% | 61.0% | 47.9% | 66 |
+| **sig_inrange_50** | **100** | 32.6% | **45.0%** | **68.2%** | **54.2%** | **52** |
+| **sig_inrange_30** | **60** | 39.3% | **50.2%** | **63.8%** | **56.2%** | **32** |
+| rec180_sig_ir50 | 100 | 32.7% | 45.7% | 62.5% | 52.8% | 47 |
+
+### Key findings
+
+**Ceiling broken:** Precision rose from 18% → 45–50%. F1 from 27% → 54–56%.
+
+**Significance pre-filter recall ceiling:** sig_inrange_50 has 32.6 positives/day from a
+55/day Mancini baseline = 59% of Mancini's levels are in the top-50 by quality. The other
+41% are "modest" pivots (context levels, recently-formed levels, ATH reference levels).
+**Absolute Mancini coverage = 68% × 59% ≈ 40%** — worse than baseline for Mancini-matching,
+but much better for our own high-confidence trading system.
+
+**Regime stability:** sig_inrange_30 Fold2 (ATH+selloff) f1=56.3% ≈ Fold1 56.1% — the
+significance filter makes the model more regime-stable than baseline (where Fold2 was 25.7%).
+
+**Feature importance shift:** With pre-selected quality pivots, `local_density` and
+`dist_from_4pm` top the list (not `touches`). Among structurally prominent pivots,
+*location* matters more than *how many times it's been touched*.
+
+**Recency filter adds nothing** when combined with in-range sig filter: rec180_sig_ir50
+(52.8%) is slightly worse than sig_inrange_50 (54.2%). Almost all in-range pivots are
+from the recent year anyway (ES in same price zone).
+
+### Two paths diverge here
+
+**Path 1 — Match Mancini:** Baseline recall of 80% of his levels (at thr=0.30, 300+/day)
+is superior for coverage. Significance filter sacrifices 40% of his levels for higher precision.
+Not recommended if goal is full Mancini replication.
+
+**Path 2 — Own trading system:** sig_inrange_30 (32 levels/day, 50% precision) or
+sig_inrange_50 (52 levels/day, 45% precision). These are the structurally strongest,
+most-tested, round-number-aligned levels in the ES. One in two predictions is a genuine
+institutional level — actionable without manual review.
