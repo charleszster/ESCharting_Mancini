@@ -659,3 +659,68 @@ Not recommended if goal is full Mancini replication.
 sig_inrange_50 (52 levels/day, 45% precision). These are the structurally strongest,
 most-tested, round-number-aligned levels in the ES. One in two predictions is a genuine
 institutional level — actionable without manual review.
+
+---
+
+## Phase 6e — ML on Deduplicated Pool (Best Result)
+**Date:** 2026-04-11
+**Script:** `backend/analysis_phase6e.py`
+**Key insight:** The auto_levels.py dedup step (min_spacing=3.0, newest-first) already
+reduces 825 raw candidates to ~108/day. Training ML on those 108 instead of 825 raises
+the base rate from 6.8% to 50.1% — breaking the precision ceiling cleanly.
+
+### Pool stats
+- Candidates/day: 108 (after dedup, pre-ML)
+- Mancini positives/day: 54.1 (50.1% base rate)
+- Almost all Mancini levels survive dedup — dedup already does good work
+
+### CV Results (3-fold expanding window, avg across folds)
+
+| thr | Prec | Rec | F1 | Levels/day |
+|---|---|---|---|---|
+| 0.30 | 56.8% | 91.8% | **70.2%** | 90 |
+| 0.40 | 59.3% | 82.4% | 69.0% | 77 |
+| 0.50 | 61.8% | 67.0% | 64.1% | 60 |
+| 0.60 | 64.6% | 45.4% | 52.4% | 38 |
+
+**Best operating point: thr=0.30** — finds 92% of Mancini's levels, outputs 90/day
+(vs his 55), F1=70.2%. Only 35 extras to visually discard, vs 117 extras at baseline.
+
+### Comparison across all phases
+
+| Phase | Prec | Rec | F1 | Lvls/day |
+|---|---|---|---|---|
+| 6a baseline (825 cand) | 18.7% | 49.7% | 27.2% | 181 |
+| 6d sig_inrange_30 | 50.2% | 63.8% | 56.2% | 32 |
+| **6e thr=0.30 (108 cand)** | **56.8%** | **91.8%** | **70.2%** | **90** |
+| 6e thr=0.50 | 61.8% | 67.0% | 64.1% | 60 |
+
+### Feature importance (final model — all data)
+
+| Feature | Importance | Notes |
+|---|---|---|
+| dist_from_4pm | 0.103 | Distance from current price — #1 discriminator after dedup |
+| sr_flip | 0.078 | S/R role reversal — jumped from #15 (0.028) to #2 |
+| recency_rank | 0.062 | How recent the pivot bar |
+| local_density | 0.060 | Cluster density within deduped pool |
+| price_crossings | 0.055 | Times price crossed through this level |
+| is_mult5 | 0.051 | Multiple of 5 flag |
+| dist_d25 | 0.049 | Distance to nearest 25pt multiple |
+| bounce | 0.048 | Price rejection magnitude |
+| touches | 0.046 | Touch count (was #1 at 0.21 in raw pool) |
+
+After dedup, `touches` fell from #1 to #9 — all survivors have decent touch counts.
+What discriminates is *where* the level is (dist_from_4pm) and whether it's an S/R flip.
+
+### Fold comparison (distribution shift)
+- Fold 1 thr=0.50: prec=61.2%, rec=74.9%, F1=67.4%
+- Fold 2 thr=0.50 (ATH+selloff): prec=62.3%, rec=59.1%, F1=60.7%
+Recall drops in the ATH regime (same as all previous phases) but precision holds.
+Fold 2 is still vastly better than baseline's 25.7% F1.
+
+### Recommended integration
+- Run auto_levels.py dedup as before (gets ~108 candidates/day)
+- Score each with phase6e_model.json
+- Display all above thr=0.30 (90/day) — show score as visual indicator
+- Or filter to thr=0.40 (77/day) for tighter output at 59% precision + 82% recall
+- Model saved: `data/phase6e_model.json`

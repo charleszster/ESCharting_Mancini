@@ -59,9 +59,13 @@ All core features are complete as of Apr 2026. Key capabilities:
   - Phases 6c/6d: candidate pool reduction via significance filter (top N by prominence*bounce from in-range pool)
     - sig_inrange_50: 45% precision, F1=54%, 52 levels/day
     - sig_inrange_30: 50% precision, F1=56%, 32 levels/day
-  - Decision needed: (A) match Mancini (use wide pool, low threshold, accept 18% precision)
-    vs (B) own high-confidence system (sig_inrange_30/50, 45-50% precision, 32-52 levels/day)
-  - See docs/auto_level_study.md and memory for full results
+  - Phase 6e (BEST): ML on deduped pool (~108 cand/day, 50% base rate)
+    - thr=0.30: prec=57%, rec=92%, F1=70%, 90 levels/day — finds 92% of Mancini's levels
+    - thr=0.40: prec=59%, rec=82%, F1=69%, 77 levels/day
+    - Feature importance: dist_from_4pm #1, sr_flip #2, recency_rank #3
+    - Model: data/phase6e_model.json
+  - Next step: integrate phase6e_model into auto_levels.py + backend API + UI
+  - See docs/auto_level_study.md for full results
 
 ## Auto level generation methodology
 Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `backend/auto_levels.py`.

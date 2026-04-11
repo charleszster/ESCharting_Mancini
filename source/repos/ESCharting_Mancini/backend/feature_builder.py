@@ -404,6 +404,174 @@ def build_feature_matrix(verbose=True,
     return df
 
 
+def build_feature_matrix_deduped(verbose=True, min_spacing=3.0):
+    """
+    Phase 6e: feature matrix using the DEDUPLICATED candidate pool — the same
+    ~100 levels/day that auto_levels.py actually outputs to the app.
+
+    Dedup logic mirrors auto_levels.py exactly:
+      - Sort all candidates newest-first (same as compute_auto_levels)
+      - Accept a candidate only if no already-accepted level is within min_spacing pts
+      - Round price to nearest integer before dedup (same as auto_levels.py)
+
+    This gives ~100 candidates/day with ~55% base rate (vs 825 candidates/day at
+    6.8% base rate for the raw pool), making ML discrimination much more tractable.
+    """
+    df_cache = _get_cache()
+    df15 = _resample_15m(df_cache)
+
+    highs_all = df15['high'].values
+    lows_all  = df15['low'].values
+    vols_all  = df15['volume'].values
+    ts_all    = df15.index
+
+    conn = sqlite3.connect(ROOT / 'data' / 'levels.db')
+    rows = conn.execute(
+        "SELECT trading_date, supports, resistances FROM levels "
+        "WHERE trading_date >= ? ORDER BY trading_date", (DATE_FROM,)
+    ).fetchall()
+    conn.close()
+
+    all_rows = []
+    skipped  = 0
+
+    for di, (td, ms, mr) in enumerate(rows):
+        close4pm, bar4pm_et = _find_4pm_bar(df15, td)
+        if close4pm is None:
+            skipped += 1
+            continue
+
+        man_levels = _parse_mancini(ms) + _parse_mancini(mr)
+        man_arr    = np.array(man_levels) if man_levels else np.array([])
+
+        hist_mask   = df15.index <= bar4pm_et
+        df15_hist   = df15[hist_mask]
+        n_hist      = len(df15_hist)
+        highs_hist  = df15_hist['high'].values
+        lows_hist   = df15_hist['low'].values
+        closes_hist = df15_hist['close'].values
+
+        ph_idx, ph_p, pl_idx, pl_p = _find_pivots(highs_hist, lows_hist, PIVOT_LEN)
+
+        # Build raw candidates newest-first (same order as auto_levels.py)
+        raw = []
+        for i in range(len(ph_idx) - 1, -1, -1):
+            p = float(ph_p[i])
+            if abs(p - close4pm) <= PRICE_RANGE:
+                raw.append({'idx': int(ph_idx[i]), 'price': p, 'type': 'high'})
+        for i in range(len(pl_idx) - 1, -1, -1):
+            p = float(pl_p[i])
+            if abs(p - close4pm) <= PRICE_RANGE:
+                raw.append({'idx': int(pl_idx[i]), 'price': p, 'type': 'low'})
+        raw.sort(key=lambda c: c['idx'], reverse=True)
+
+        # Dedup — mirror auto_levels.py logic exactly
+        accepted_prices = []
+        candidates = []
+        for cand in raw:
+            p_rounded = round(cand['price'])
+            if any(abs(ap - p_rounded) < min_spacing for ap in accepted_prices):
+                continue
+            accepted_prices.append(p_rounded)
+            candidates.append((cand['idx'], cand['price'], p_rounded, cand['type']))
+
+        if not candidates:
+            continue
+
+        all_prices_r = np.array([c[2] for c in candidates], dtype=float)
+        day_vol_mean = float(vols_all[hist_mask].mean()) or 1.0
+
+        for (cidx, price, p_rounded, ptype) in candidates:
+            # label
+            if len(man_arr) > 0:
+                label = int(np.min(np.abs(man_arr - p_rounded)) <= MATCH_TOL)
+            else:
+                label = 0
+
+            # bounce
+            end   = min(cidx + FORWARD_BARS + 1, len(highs_all))
+            fwd_h = highs_all[cidx + 1:end]
+            fwd_l = lows_all[cidx + 1:end]
+            if ptype == 'high':
+                bounce = float(price - fwd_l.min()) if len(fwd_l) > 0 else 0.0
+            else:
+                bounce = float(fwd_h.max() - price) if len(fwd_h) > 0 else 0.0
+
+            # touches (full pivot set)
+            touches = (
+                int(np.sum(np.abs(ph_p - price) <= TOUCH_ZONE)) +
+                int(np.sum(np.abs(pl_p - price) <= TOUCH_ZONE))
+            )
+
+            # local density within deduped pool
+            density = int(np.sum(np.abs(all_prices_r - p_rounded) <= DENSITY_ZONE)) - 1
+
+            vol_raw    = float(vols_all[cidx])
+            vol_zscore = (vol_raw - day_vol_mean) / (day_vol_mean + 1e-9)
+
+            prom   = _prominence(highs_hist, lows_hist, cidx, ptype, PIVOT_LEN)
+            consol = _consolidation_time(highs_hist, lows_hist, cidx, price, CONSOL_ZONE)
+            depart = _clean_departure(highs_all, lows_all, cidx, price, ptype, FORWARD_BARS)
+
+            sr_flip, crossings = _sr_flip_and_crossings(
+                highs_hist, lows_hist, closes_hist, cidx, price, ptype,
+                ph_prices=ph_p, pl_prices=pl_p,
+            )
+
+            d5, d25, d50, d100 = _round_number_distances(price)
+            is_mult5 = int(p_rounded % 5 == 0)
+            r_mod5   = p_rounded % 5
+            dist_round_to_mult5 = min(r_mod5, 5 - r_mod5)
+
+            pivot_et   = ts_all[cidx]
+            days_since = _trading_days_since(bar4pm_et, pivot_et, None)
+
+            dist_from_4pm = abs(price - close4pm)
+            is_support    = int(price < close4pm)
+            is_high_piv   = int(ptype == 'high')
+            recency_rank  = n_hist - 1 - cidx
+
+            all_rows.append({
+                'trading_date':        td,
+                'price':               price,
+                'price_rounded':       p_rounded,
+                'pivot_type':          is_high_piv,
+                'is_support':          is_support,
+                'bounce':              round(bounce, 2),
+                'touches':             touches,
+                'local_density':       density,
+                'prominence':          round(prom, 2),
+                'vol_zscore':          round(vol_zscore, 3),
+                'consolidation':       consol,
+                'clean_departure':     round(depart, 2),
+                'sr_flip':             sr_flip,
+                'price_crossings':     crossings,
+                'dist_from_4pm':       round(dist_from_4pm, 2),
+                'dist_d5':             round(d5, 2),
+                'dist_d25':            round(d25, 2),
+                'dist_d50':            round(d50, 2),
+                'dist_d100':           round(d100, 2),
+                'is_mult5':            is_mult5,
+                'dist_round_to_mult5': dist_round_to_mult5,
+                'days_since_pivot':    days_since,
+                'recency_rank':        recency_rank,
+                'label':               label,
+            })
+
+        if verbose and (di + 1) % 20 == 0:
+            pos = sum(1 for r in all_rows[-len(candidates):] if r['label'])
+            print(f"  {di+1}/{len(rows)}  {td}  deduped={len(candidates)}  "
+                  f"matches={pos}  total_rows={len(all_rows)}", flush=True)
+
+    df = pd.DataFrame(all_rows)
+    if verbose:
+        n_pos = df['label'].sum()
+        print(f"\nDeduped feature matrix: {len(df):,} rows  |  "
+              f"positive={n_pos:,} ({n_pos/len(df)*100:.1f}%)  |  "
+              f"skipped_dates={skipped}")
+    return df
+
+
 if __name__ == '__main__':
     from data_manager import warm_cache
     print("Warming cache...")
