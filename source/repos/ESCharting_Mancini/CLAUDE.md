@@ -54,7 +54,7 @@ All core features are complete as of Apr 2026. Key capabilities:
 - After fix: max 10pt diff vs TV (was ±51pt), 8 bars in 3264 differ slightly (feed noise)
 
 ## What's next
-- Step 10: Analyze and tune auto level parameters vs Mancini's published levels (ongoing experiment)
+- Step 10: Auto level ML classifier (Phase 6) — see research doc and memory for full plan
 
 ## Auto level generation methodology
 Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `backend/auto_levels.py`.
@@ -78,7 +78,7 @@ Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `ba
   - This captures "prior support acting as resistance" and vice versa
 
 ### Candidate filtering
-- Price must be within ±250 pts of `close4pm` (configurable)
+- Price must be within ±325 pts of `close4pm` (configurable)
 - Pivots processed newest-first (reverse chronological) — most recent test of a price zone wins
 - Deduplication: if new candidate is within `minSpacing` pts (default 3.0) of any already-accepted level, skip it
 
@@ -88,26 +88,27 @@ Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `ba
   - Pivot low at price P, time T: find max pivot high in same window → `bounce = max_high − P`
 - This measures how strongly price was historically rejected from the level, regardless of its current role
 - A pivot low above close4pm (acting as resistance) still measures bounce as max_high_after − P
-- Default N_forward = 100 bars (= 25 hrs on 15-min)
+- Default N_forward = 10 bars (= 2.5 hrs on 15-min) — tuned in Phase 5 (was 100)
 
 ### Touch counting (confluence signal)
 - Count all pivot highs AND pivot lows (timestamp ≤ 4pm anchor) within ±`touchZone` pts (default 2.0) of P
 - Forward touches (after 4pm) are excluded — avoids future data leakage
 
 ### Major vs. minor classification
-- `isMajor = bounce ≥ majBounce (default 40 pts)  OR  touches ≥ majTouches (default 5)`
+- `isMajor = bounce ≥ majBounce (default 40 pts)  OR  touches ≥ majTouches (default 12)`
 - Minor = everything else (drawn as dashed line)
+- Defaults tuned via 5-phase parameter study (see docs/auto_level_study.md) to match Mancini's ~42% major ratio
 
 ### Configurable parameters (new Settings tab)
 | Parameter | Default | Notes |
 |---|---|---|
 | Pivot lookback (bars/side) | 5 | integer |
-| Price range (±pts) | 250 | float |
+| Price range (±pts) | 325 | float — tuned in Phase 2 (was 250) |
 | Min level spacing (pts) | 3.0 | float |
 | Touch zone (±pts) | 2.0 | float |
 | Major bounce threshold (pts) | 40 | float |
-| Major touch threshold | 5 | integer |
-| Bounce forward window (bars) | 100 | integer |
+| Major touch threshold | 12 | integer — tuned in Phase 5 (was 5) |
+| Bounce forward window (bars) | 10 | integer — tuned in Phase 5 (was 100) |
 | Show major only | false | toggle |
 | Show supports | true | toggle |
 | Show resistances | true | toggle |

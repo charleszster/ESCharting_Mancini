@@ -57,12 +57,12 @@ const DEFAULT_SETTINGS = {
   // Auto level generation
   autoLevels: {
     pivotLen:        5,
-    priceRange:      250,
+    priceRange:      325,
     minSpacing:      3.0,
     touchZone:       2.0,
     majBounce:       40.0,
-    majTouches:      5,
-    forwardBars:     100,
+    majTouches:      12,
+    forwardBars:     10,
     showMajorOnly:   false,
     showSupports:    true,
     showResistances: true,

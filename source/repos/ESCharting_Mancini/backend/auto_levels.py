@@ -100,8 +100,9 @@ def compute_auto_levels(
     min_spacing:      float = 3.0,
     touch_zone:       float = 2.0,
     maj_bounce:       float = 40.0,
-    maj_touches:      int   = 5,
-    forward_bars:     int   = 100,
+    maj_touches:      int   = 12,
+    forward_bars:     int   = 10,
+    min_bounce:       float = 0.0,
     show_major_only:  bool  = False,
     show_supports:    bool  = True,
     show_resistances: bool  = True,
@@ -182,6 +183,10 @@ def compute_auto_levels(
             bounce = float(p - fwd_l.min()) if len(fwd_l) > 0 else 0.0
         else:
             bounce = float(fwd_h.max() - p) if len(fwd_h) > 0 else 0.0
+
+        # Minimum bounce floor — exclude weak pivots regardless of major/minor status.
+        if bounce < min_bounce:
+            continue
 
         # Touch count — pivots within ±touch_zone of this price, at or before 4pm.
         touches = (
