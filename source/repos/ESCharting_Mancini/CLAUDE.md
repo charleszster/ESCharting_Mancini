@@ -96,6 +96,7 @@ Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `ba
 | Show major only | false | toggle |
 | Show supports | true | toggle |
 | Show resistances | true | toggle |
+| ATH cluster (top-N) | 15 | integer 0–50 — extra resistance levels from top-N bar highs not near any accepted level; 0 = off |
 
 ### Storage and UI
 - Auto levels are NOT saved to levels.db — computed in memory only
@@ -106,8 +107,16 @@ Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `ba
 - Min score filter is client-side: score field is on every returned level; no re-fetch needed when slider moves
 
 ## What's next
-One remaining task:
-- **ATH cluster detection** — after standard dedup, scan for top-N highest pivot highs in the lookback window not already within 5pts of an accepted level; captures the 12 missing ATH resistances that pivot geometry misses near the top of the prior move
+All planned tasks complete. No remaining work items.
+
+## ATH cluster detection (implemented)
+After standard pivot dedup builds `accepted`, `_ath_cluster_candidates()` scans all 15-min bar highs above `close4pm` within `price_range`, sorted highest-first, and adds up to `ath_cluster_n` (default 15) that are:
+- Not within 5pts of any accepted level (hardcoded guard)
+- Not within `min_spacing` pts of each other
+
+These ATH candidates are injected into `accepted` before ML scoring, so they participate in all filters (min_score, show_major_only) naturally. They capture ATH zone levels where strict pivot geometry finds no clean pivots (market ran through without reversing).
+- `ath_cluster_n=0` disables the feature
+- Configurable in Settings → Auto Levels → "ATH cluster (top-N)" slider (range 0–50)
 
 ## Research conclusions (major/minor study — fully exhausted)
 We studied whether Mancini's major/minor distinction (the `(major)` tag in levels.db) could be predicted from the features available. It cannot, with any reliability:

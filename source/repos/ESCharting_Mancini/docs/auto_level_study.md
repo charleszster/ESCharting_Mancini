@@ -1,7 +1,7 @@
 # Auto Level Generator — Research Study
 **Project:** ESCharting_Mancini  
 **Data:** 216 trading days, 2025-03-07 to 2026-04-13  
-**Status:** Complete — one structural gap remains (ATH cluster detection)
+**Status:** Complete — all tasks done including ATH cluster detection
 
 ---
 
@@ -35,6 +35,7 @@ For each trading date D:
 - Deduplicate: skip any candidate within 3.0pts of an already-accepted level
 - Classify as support (price < close4pm) or resistance (price > close4pm)
 - Score each accepted level with the Phase 6e ML model; `major = score ≥ 0.5`
+- ATH cluster: inject up to `ath_cluster_n` (default 15) extra resistances from the top-N bar highs not within 5pts of any accepted level, then score those through the same ML path
 
 ---
 
@@ -214,11 +215,13 @@ Mancini's major/minor distinction is not reliably learnable from pivot geometry 
 
 ---
 
-## 8. Remaining Gap: ATH Cluster Detection
+## 8. ATH Cluster Detection (Implemented)
 
-The 12 missing resistances in the 7048–7139 zone are a structural problem: market ran through that zone quickly during the late-2025 ATH run without forming the clean 5-bar confirmed swing highs the algorithm requires. Mancini identifies those levels from prior consolidation clusters and channel projections that the pivot detector cannot see.
+The 12 missing resistances in the 7048–7139 zone were a structural problem: market ran through that zone quickly during the late-2025 ATH run without forming the clean 5-bar confirmed swing highs the algorithm requires.
 
-Proposed fix (task 2): after standard dedup, scan for the top-N highest pivot highs in the lookback window that are not already within 5pts of an accepted level. These represent price clusters that were visited but didn't produce clean confirmed pivots. Details to be designed and tested.
+**Solution:** `_ath_cluster_candidates()` in `backend/auto_levels.py`. After the standard dedup produces `accepted`, it scans all 15-min bar highs above `close4pm`, sorted highest-first, and adds up to `ath_cluster_n` (default 15) that are not within 5pts of any accepted level and not within `min_spacing` pts of each other. These are injected before ML scoring, so they participate in all filters (`min_score`, `show_major_only`) naturally.
+
+UI: Settings → Auto Levels → "ATH cluster (top-N)" slider (0–50; 0 = off). Backend param: `ath_cluster_n`.
 
 ---
 

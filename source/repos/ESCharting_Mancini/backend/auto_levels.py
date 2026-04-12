@@ -15,6 +15,9 @@ Methodology:
   - Phase 6e ML scoring: XGBoost model scores each accepted level 0–1.
     major = score >= 0.5 (solid line), minor = score < 0.5 (dashed line).
     Falls back to bounce/touches heuristic if model not available.
+  - ATH cluster: after standard dedup, top-N highest bar highs above close4pm
+    not within 5pts of any accepted level are added as extra resistances.
+    These capture the ATH zone where strict pivot geometry finds no clean pivots.
 """
 import numpy as np
 import pandas as pd
@@ -173,6 +176,63 @@ def _find_pivots(highs: np.ndarray, lows: np.ndarray, n: int):
     return ph_idx, highs[ph_idx], pl_idx, lows[pl_idx]
 
 
+# ── ATH cluster helper ────────────────────────────────────────────────────────
+
+def _ath_cluster_candidates(
+    highs_hist: np.ndarray,
+    close4pm:   float,
+    price_range: float,
+    accepted:   list,
+    ath_spacing:  float = 5.0,
+    min_spacing:  float = 3.0,
+    top_n:        int   = 15,
+) -> list:
+    """Return up to top_n bar indices whose highs are above close4pm, within
+    price_range, not within ath_spacing pts of any already-accepted level, and
+    not within min_spacing pts of each other.
+
+    Sorted highest-price-first so we capture the true ATH zone first.
+    """
+    if top_n <= 0:
+        return []
+
+    accepted_prices = (
+        np.array([a['price'] for a in accepted], dtype=float)
+        if accepted else np.array([], dtype=float)
+    )
+
+    # All bar indices with high strictly above close4pm and within price_range
+    highs = highs_hist
+    mask  = (highs > close4pm) & (highs <= close4pm + price_range)
+    idxs  = np.where(mask)[0]
+    if len(idxs) == 0:
+        return []
+
+    # Sort descending by bar high
+    idxs = idxs[np.argsort(highs[idxs])[::-1]]
+
+    results: list[dict] = []
+    taken_prices: list[float] = []
+
+    for idx in idxs:
+        p   = float(highs[idx])
+        p_r = round(p)
+
+        # Skip if already covered by accepted levels
+        if len(accepted_prices) and np.any(np.abs(accepted_prices - p_r) < ath_spacing):
+            continue
+        # Skip if too close to another ATH candidate already chosen
+        if any(abs(tp - p_r) < min_spacing for tp in taken_prices):
+            continue
+
+        results.append({'idx': int(idx), 'price': p, 'price_r': p_r})
+        taken_prices.append(float(p_r))
+        if len(results) >= top_n:
+            break
+
+    return results
+
+
 # ── main entry point ──────────────────────────────────────────────────────────
 
 def compute_auto_levels(
@@ -188,6 +248,7 @@ def compute_auto_levels(
     show_major_only:  bool  = False,
     show_supports:    bool  = True,
     show_resistances: bool  = True,
+    ath_cluster_n:    int   = 15,
     target_date:      str | None = None,
 ) -> dict:
     """Compute Mancini-style support/resistance levels anchored to most recent 4 PM ET close.
@@ -290,6 +351,49 @@ def compute_auto_levels(
             '_bounce':  bounce,
             '_touches': touches,
         })
+
+    # ── ATH cluster injection ─────────────────────────────────────────────────
+    # Add top-N highest bar highs not already covered by standard dedup.
+    # Only when resistances are visible; ath_cluster_n=0 disables this step.
+    if show_resistances and ath_cluster_n > 0:
+        ath_cands = _ath_cluster_candidates(
+            highs_hist, close4pm, price_range,
+            accepted,
+            ath_spacing=5.0,
+            min_spacing=min_spacing,
+            top_n=ath_cluster_n,
+        )
+        for ac in ath_cands:
+            p    = ac['price']
+            fidx = ac['idx']
+            p_r  = ac['price_r']
+
+            end   = min(fidx + forward_bars + 1, len(highs_all))
+            fwd_l = lows_all[fidx + 1:end]
+            bounce = float(p - fwd_l.min()) if len(fwd_l) > 0 else 0.0
+
+            if bounce < min_bounce:
+                continue
+
+            touches = (
+                int(np.sum(np.abs(touch_ph_p - p) <= touch_zone)) +
+                int(np.sum(np.abs(touch_pl_p - p) <= touch_zone))
+            )
+
+            accepted.append({
+                'price':    p_r,
+                'price_lo': p_r,
+                'price_hi': p_r,
+                'label':    str(p_r),
+                'is_res':   True,
+                '_major_heuristic': bounce >= maj_bounce or touches >= maj_touches,
+                '_fidx':    fidx,
+                '_ptype':   'high',
+                '_price':   p,
+                '_bounce':  bounce,
+                '_touches': touches,
+                '_ath_cluster': True,
+            })
 
     # ── ML scoring ────────────────────────────────────────────────────────────
     model = _load_ml_model()
@@ -398,9 +502,10 @@ def compute_auto_levels(
     supports_sorted    = sorted(supports,    key=lambda l: l['price'], reverse=True)
     resistances_sorted = sorted(resistances, key=lambda l: l['price'])
 
-    ml_str = f"  ML scored" if model is not None else "  (no ML model)"
+    ml_str  = "  ML scored" if model is not None else "  (no ML model)"
+    ath_str = f"  ath_cluster={sum(1 for l in accepted if l.get('_ath_cluster'))}" if ath_cluster_n > 0 else ""
     print(f"Auto levels: anchor={anchor_date}  close4pm={close4pm:.2f}  "
-          f"sup={len(supports)}  res={len(resistances)}{ml_str}")
+          f"sup={len(supports)}  res={len(resistances)}{ath_str}{ml_str}")
 
     return {
         'date':            anchor_date,

@@ -81,6 +81,7 @@ def levels_auto(
     show_supports:    bool        = Query(default=True),
     show_resistances: bool        = Query(default=True),
     min_score:        float       = Query(default=0.0, ge=0.0, le=1.0),
+    ath_cluster_n:    int         = Query(default=15, ge=0, le=50),
     target_date:      str | None  = Query(default=None, description="ET date, e.g. 2026-04-08. Omit for most recent 4pm."),
 ):
     try:
@@ -89,7 +90,7 @@ def levels_auto(
             touch_zone=touch_zone, maj_bounce=maj_bounce, maj_touches=maj_touches,
             forward_bars=forward_bars, show_major_only=show_major_only,
             show_supports=show_supports, show_resistances=show_resistances,
-            min_score=min_score, target_date=target_date,
+            min_score=min_score, ath_cluster_n=ath_cluster_n, target_date=target_date,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=404, detail=str(e))

@@ -361,6 +361,13 @@ export default function ChartSettings({ value, onChange, onClose }) {
                   min={0.0} max={0.95} step={0.05}
                   fmt={v => v === 0 ? 'off' : v.toFixed(2)}
                 />
+                <SliderRow
+                  label="ATH cluster (top-N)"
+                  value={value.autoLevels.athClusterN}
+                  onChange={v => set('autoLevels.athClusterN', Math.round(v))}
+                  min={0} max={50} step={1}
+                  fmt={v => Math.round(v) === 0 ? 'off' : `${Math.round(v)}`}
+                />
               </Section>
             </>
           )}

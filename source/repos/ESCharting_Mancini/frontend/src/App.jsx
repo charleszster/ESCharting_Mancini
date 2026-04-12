@@ -67,6 +67,7 @@ const DEFAULT_SETTINGS = {
     showSupports:    true,
     showResistances: true,
     minScore:        0.0,
+    athClusterN:     15,
   },
 }
 
@@ -185,6 +186,7 @@ export default function App() {
       show_major_only:  p.showMajorOnly,
       show_supports:    p.showSupports,
       show_resistances: p.showResistances,
+      ath_cluster_n:    Math.round(p.athClusterN),
       ...(targetDate ? { target_date: targetDate } : {}),
     })
     setAutoLevelsLoading(true)

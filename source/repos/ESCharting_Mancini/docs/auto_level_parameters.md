@@ -163,6 +163,37 @@ window). This interaction has not yet been fully tested. Leave at 0.0 for now.
 | Sharper pivot detection | `pivot_len` ↑ | Fewer, cleaner pivots |
 | Broader pivot detection | `pivot_len` ↓ | More pivots |
 | Show only high-conviction | `show_major_only = true` | Minor lines hidden |
+| More ATH zone resistances | `ath_cluster_n` ↑ | More supplemental top-N highs |
+| Disable ATH cluster | `ath_cluster_n = 0` | No supplemental levels added |
+
+---
+
+## Group 4: ATH cluster detection (supplemental resistances)
+
+### `ath_cluster_n` (default: 15)
+**What it does:** After the standard pivot dedup produces `accepted`, scans all
+15-min bar highs above `close4pm`, sorted highest-first, and adds up to N
+resistance levels that are:
+- Not within **5 pts** of any already-accepted level (hardcoded guard)
+- Not within **`min_spacing` pts** of each other
+
+These supplemental levels target the ATH zone where strict pivot geometry finds
+no clean 5-bar confirmed swing highs — the market ran through those prices quickly
+without reversing enough to form a confirmed pivot. ATH cluster levels go through
+the same ML scoring as regular levels, so they also respond to `min_score` and
+`show_major_only`.
+
+**Effect:**
+- Increase → more supplemental resistances added above current price
+- 0 → feature disabled entirely
+
+**When to adjust:** If your chart is missing resistance levels in the ATH zone
+(prices the market visited but didn't reverse at clearly), increase this. If you
+find the ATH zone too cluttered with dashed lines, lower it or raise `min_score`.
+
+**Research finding:** The 12 missing ATH resistances in the 7048–7139 zone
+(vs Mancini's 4/13/2026 levels) were the motivation. Standard pivot detection
+with N=5 bars finds nothing there; ATH cluster fills the gap.
 
 ---
 
