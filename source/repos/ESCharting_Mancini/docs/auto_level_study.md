@@ -1,16 +1,13 @@
-# Auto Level Generator — Parameter Study
-**Date:** 2026-04-10
-**Author:** charleszster
-**Project:** ESCharting_Mancini
+# Auto Level Generator — Research Study
+**Project:** ESCharting_Mancini  
+**Data:** 216 trading days, 2025-03-07 to 2026-04-13  
+**Status:** Complete — one structural gap remains (ATH cluster detection)
 
 ---
 
 ## 1. Objective
 
-Quantify how closely the algorithmic auto level generator reproduces Mancini's
-hand-drawn support/resistance levels, identify which parameters drive accuracy,
-and find parameter settings that maximize recall on supports (the primary entry signal
-for failed-breakdown trades).
+Reproduce Mancini's hand-drawn ES support/resistance levels algorithmically. His levels serve as entry signals for failed-breakdown trades; high recall on supports is the primary metric. The work progressed through two distinct phases: parameter tuning (Phases 1–5) and ML scoring (Phase 6), followed by a post-integration study of the major/minor distinction (Phase 7).
 
 ---
 
@@ -21,743 +18,229 @@ for failed-breakdown trades).
 | ES price data | `es_front_month.parquet` — 1-min front-month continuous, back-adjusted |
 | Auto level engine | `backend/auto_levels.py` — 15-min pivot detection, anchored to prior 4pm ET close |
 | Mancini levels | `data/levels.db` — table `levels` (trading_date, supports, resistances) |
-| Analysis window | 2025-12-10 to 2026-04-10 (82 trading days) |
-| Match tolerance | ±2.0 pts (two levels considered identical if within this distance) |
+| Study window | 2025-03-07 to 2026-04-13 (216 trading days) |
+| Match tolerance | ±2.0 pts |
+
+Mancini publishes levels as comma-separated text, e.g. `"6826-21 (major), 6819, 6810 (major)"`. Ranges are parsed to their midpoint. The `(major)` tag is preserved throughout for major/minor analysis.
 
 ---
 
-## 3. Methodology
+## 3. Algorithm Overview
 
-### 3.1 Level generation
-For each trading date D, `compute_auto_levels(target_date=D)` is called with the
-parameter set under test. This anchors to the 4pm ET close of the prior trading day,
-detects pivot highs/lows on 15-min bars within ±price_range pts, deduplicates with
-min_spacing, classifies each level as support (price < close4pm) or resistance
-(price > close4pm), and labels it major or minor based on bounce and touch count.
-
-### 3.2 Mancini level parsing
-Mancini publishes levels as comma-separated text, e.g.:
-`"6826-21 (major), 6819, 6810 (major)"`.
-Ranges like "6826-21" are parsed to their midpoint (6823.5).
-The "(major)" tag is stripped for price comparison, retained for major/minor ratio analysis.
-
-### 3.3 Metrics
-- **Precision**: % of our generated levels that fall within ±2.0 pts of any Mancini level
-- **Recall**: % of Mancini's levels that fall within ±2.0 pts of any of our generated levels
-- **Major %**: share of levels classified as major (ours vs. Mancini)
-
-### 3.4 Parameter sweeps
-**Phase 1 — one-at-a-time sweep:** each of 7 parameters varied independently across
-a range of values while all others held at baseline. 37 total runs × 82 dates.
-
-**Phase 2 — 2D grid search:** price_range × min_spacing (the two parameters that
-moved the needle in Phase 1). 5 × 5 = 25 combinations × 82 dates.
-
-**Major/minor study:** maj_bounce and maj_touches swept independently to find values
-that match Mancini's observed major/minor ratio.
+For each trading date D:
+- Aggregate 1-min parquet to 15-min bars
+- Find the most recent bar closing at 4:00 PM ET (`close4pm`) — the price reference for everything
+- Detect pivot highs/lows using N bars of confirmation on each side (default N=5)
+- Filter to pivots within ±325pts of `close4pm`, processed newest-first
+- Deduplicate: skip any candidate within 3.0pts of an already-accepted level
+- Classify as support (price < close4pm) or resistance (price > close4pm)
+- Score each accepted level with the Phase 6e ML model; `major = score ≥ 0.5`
 
 ---
 
-## 4. Baseline Parameters
+## 4. Parameter Tuning (Phases 1–5)
 
-| Parameter | Value | Description |
+### 4.1 Phase 1 — Baseline and Sensitivity
+
+Baseline parameters: price_range=250, min_spacing=3.0, pivot_len=5, forward_bars=100, maj_bounce=40, maj_touches=5.
+
+| Metric | Supports | Resistances |
 |---|---|---|
-| pivot_len | 5 | Bars each side required to confirm a pivot |
-| price_range | 250.0 pts | Max distance from 4pm close to include a level |
-| min_spacing | 3.0 pts | Min gap between accepted levels (deduplication) |
-| touch_zone | 2.0 pts | Radius for counting historical pivot touches |
-| maj_bounce | 40.0 pts | Bounce threshold for major classification |
-| maj_touches | 5 | Touch count threshold for major classification |
-| forward_bars | 100 | 15-min bars after pivot used to measure bounce |
+| Recall % | 70.2% | 44.0% |
+| Precision % | 59.6% | 60.1% |
+| Avg levels/day | 59.5 | 33.3 |
 
----
+One-at-a-time sweep of 7 parameters across 82 dates revealed a clean separation: **only price_range, min_spacing, and pivot_len affect which levels exist**. forward_bars, maj_bounce, maj_touches, and touch_zone are pure classification parameters — they shift the solid/dashed rendering but have zero effect on recall or precision.
 
-## 5. Results
-
-### 5.1 Baseline performance
-
-| Metric | Supports | Resistances | Combined |
-|---|---|---|---|
-| Precision % | 59.6% | 60.1% | 59.8% |
-| Recall % | 70.2% | 44.0% | 57.7% |
-| Avg levels/day (ours) | 59.5 | 33.3 | 92.8 |
-| Avg levels/day (Mancini) | 47.2 | 42.7 | 89.9 |
-
-### 5.2 Phase 1 — One-at-a-time sensitivity
-
-Parameters sorted by impact on support recall (primary metric):
-
-| Parameter | Effect on sup recall | Effect on res recall | Notes |
-|---|---|---|---|
-| price_range | **High** (+12.7 pts at 350) | Moderate (+3.3 pts) | Most impactful single param |
-| min_spacing | **High** (−46 pts at 10.0) | High (−29 pts at 10.0) | Recall collapses above 4.0 |
-| pivot_len | Low (−3.5 pts at 10) | Negligible | Modest effect |
-| forward_bars | **Zero** | Zero | Only affects bounce calc |
-| maj_bounce | **Zero** | Zero | Only affects classification |
-| maj_touches | **Zero** | Zero | Only affects classification |
-| show_major_only | Negligible (−1.4 pts) | Negligible | Almost all levels are major |
-
-Key finding: **forward_bars, maj_bounce, and maj_touches have zero effect on recall or
-precision** because they only control major/minor classification, not which levels exist.
-The only parameters that control level existence are price_range, min_spacing, and pivot_len.
-
-### 5.3 2D Grid Search: price_range × min_spacing
-
-Best for support recall:
-- price_range=350.0, min_spacing=2.0
-- sup_rec=89.5%, res_rec=51.1%, avg_our=175.5 levels/day
-
-Best balanced (sup_rec + res_rec):
-- price_range=350.0, min_spacing=2.0
-- sup_rec=89.5%, res_rec=51.1%, avg_our=175.5 levels/day
-
-Full grid results in `data/auto_levels_analysis.xlsx` → "Grid Search (2D)" sheet.
-
-### 5.4 Major/minor classification
-
-| | Supports | Resistances |
-|---|---|---|
-| Mancini major % | 42.1% | 41.4% |
-| Our major % (baseline) | 96.8% | 96.7% |
-
-Our algorithm classifies far too many levels as major. The maj_bounce and maj_touches
-parameters control this independently of recall/precision.
-
-To match Mancini's support major %:
-- maj_bounce ≈ 100.0 (produces 91.5% sup major)
-- maj_touches ≈ 10.0 (produces 87.4% sup major)
-
-Full sweep in `data/auto_levels_analysis.xlsx` → "Major-Minor Study" sheet.
-
----
-
-## 6. Discussion
-
-### 6.1 Structural limitation: resistances at all-time highs
-During Dec 2025 – Jan 2026 (ES near ATH ~7000+), resistance recall collapsed to
-single digits on many days. This is not a parameter problem: when price is at
-all-time highs, there is no historical price action above to generate resistance
-pivots. Mancini draws those levels manually using trend lines and channel projections,
-which the algorithm cannot replicate. This limitation is accepted; supports are the
-primary signal for failed-breakdown trade entries.
-
-### 6.2 Distant levels dominate the miss count
-Increasing price_range from 250 to 350 recovers +12.7 pts of support recall,
-suggesting that roughly 18% of Mancini's supports lie 250–350 pts below 4pm close.
-These distant levels are valid for context but rarely tradeable — a practical filter
-by distance from current price would show higher effective recall for near-price levels.
-
-### 6.3 Precision ceiling
-Precision plateaus at ~60% regardless of parameter changes. We consistently generate
-~30–40% more levels than Mancini publishes. Some of these extras are legitimate levels
-Mancini omits for editorial reasons (brevity, chart clarity). A hard cap on total
-level count is a possible future direction.
-
-### 6.4 Major/minor over-classification
-Our bounce + touch criteria flag too many levels as major relative to Mancini.
-Since this parameter set has zero effect on recall/precision, it can be tuned
-independently after locking in the recall-optimized price_range and min_spacing.
-
----
-
-## 7. Recommendations
-
-| Parameter | Current | Recommended | Rationale |
-|---|---|---|---|
-| price_range | 250 | 300–325 | +8–12% support recall, ~107–113 levels/day |
-| min_spacing | 3.0 | 2.5–3.0 | Marginal gain; 2.5 adds ~20 levels/day |
-| maj_bounce | 40 | See Major-Minor sheet | Tune to match Mancini major % |
-| maj_touches | 5 | See Major-Minor sheet | Tune to match Mancini major % |
-| forward_bars | 100 | 100 (unchanged) | No effect on output |
-| pivot_len | 5 | 5 (unchanged) | Effect too small to justify change |
-
-**Priority order:**
-1. Increase price_range to 300 (biggest single improvement, low cost)
-2. Tune maj_bounce and maj_touches to correct major/minor ratio
-3. Optionally try min_spacing=2.5 if level count is acceptable
-
----
-
-## 8. Scripts and outputs
-
-| File | Purpose |
+| Parameter | Effect on support recall |
 |---|---|
-| `backend/analyze_levels.py` | Phase 1: baseline analysis + initial Excel output |
-| `backend/sweep_levels.py` | Phase 1: 1D parameter sweep (37 combos × 82 days) |
-| `backend/analysis_phase2.py` | Phase 2: major/minor study + 2D grid search + this doc |
-| `data/auto_levels_analysis.xlsx` | All results: 8 worksheets |
-| `docs/auto_level_study.md` | This document |
+| price_range | High (+12.7pts at 350 vs 250) |
+| min_spacing | High (−46pts at 10.0) — collapses above 4.0 |
+| pivot_len | Low (−3.5pts at 10) |
+| forward_bars | Zero |
+| maj_bounce | Zero |
+| maj_touches | Zero |
+
+### 4.2 Phase 2 — 2D Grid Search
+
+price_range × min_spacing grid (5×5 = 25 combos × 82 dates). Best balanced result: price_range=325, min_spacing=3.0 → sup_rec=80.7%, res_rec=46.9%, ~113 levels/day. Going to price_range=350, min_spacing=2.0 gained +3pts recall but produced 175 levels/day — too cluttered. **price_range=325 adopted as production default.**
+
+### 4.3 Phase 3 — Minimum Bounce Floor
+
+Mancini states a level is significant only if price bounced ≥20pts from it. Tested `min_bounce` from 0 to 40 pts. Key finding: at forward_bars=100 (25hr window), ES almost always moves 20pts from any pivot in 25 hours — the filter barely activates. At min_bounce=20 with forward_bars=100, recall dropped only 0.7pts while level count fell 1.3/day. Not worth the complexity; **min_bounce left at 0.0**.
+
+### 4.4 Phase 4 — Short Forward Windows
+
+Tested forward_bars=2–16 (30min–4hr). Two findings: (1) short windows tank recall because pivots haven't bounced 20pts yet in 30–75 min, failing the min_bounce floor entirely; (2) even at 2 bars, major% barely moved — the maj_touches=5 criterion is trivially met from years of price history and dominates classification regardless of bounce window length. Forward_bars and maj_touches cannot be tuned independently.
+
+### 4.5 Phase 5 — 2D Sweep: maj_touches × forward_bars
+
+48 combinations × 215 dates. Recall was dead flat at 80.6% across all 48 combos — confirmed these parameters are pure classification. Mancini's major ratio is consistently ~42%; ours was ~97% at baseline.
+
+Winner: **maj_touches=12, forward_bars=10** → sup_maj%=41.8% (Mancini: 42.1%).
+
+At maj_touches=5 (old default), ~90% of levels were major because years of price history mean almost every zone has been visited 5+ times. At 12, only zones with exceptional historical use qualify via touches alone. The 2.5hr bounce window (forward_bars=10) then becomes a meaningful secondary criterion.
+
+Note: res_maj% at winner combo is 50.6% vs Mancini's 41.4% — structural asymmetry because resistance levels near ATH have fewer historical touches (price hasn't been there before). Accepted limitation.
 
 ---
 
-## 9. Reproducibility
+## 5. ML Scoring (Phase 6)
 
-To re-run the full analysis:
-```bash
-cd backend
-python analyze_levels.py    # Phase 1 baseline
-python sweep_levels.py      # Phase 1 1D sweep
-python analysis_phase2.py   # Phase 2 everything
-```
-Results are deterministic given the same parquet data and parameters.
+### 5.1 Why ML
 
+After Phase 5, the gap was clear: 80% recall on supports, ~47% on resistances, ~97 extras per day. Parameter tuning had plateaued — the remaining gap reflects Mancini's editorial judgment about which pivots are significant, not any parameter we can tune. ML trained on 216 days of his labels can learn these preferences implicitly.
 
----
+### 5.2 Phases 6a–6d: Finding the Right Candidate Pool
 
-## Phase 3 — Minimum Bounce Floor and Quality Cap
-**Date:** 2026-04-10
-**Base params:** price_range=325, min_spacing=3.0 (from Phase 2 grid best)
+**Phase 6a (baseline):** Trained XGBoost on ~825 raw candidates/day, 6.8% positive rate. Best F1 at thr=0.50: 27.2%, 181 levels/day. Root cause: precision ceiling ~18% is structural at a 1-in-18 base rate. Touches was the top feature (0.21 importance).
 
-### Background
-Mancini explicitly states that a level is significant only if price bounced at least
-20 points from it. The Phase 1/2 algorithm had no minimum bounce requirement for
-inclusion — bounce only affected major/minor classification, which is why ~97% of
-our levels were classified as major regardless of maj_bounce setting.
+**Phase 6b:** Added sr_flip, price_crossings, round-number features. Round-number features collectively as important as touches. sr_flip weak (0.028) — confirmed-pivot implementation needed. Ceiling unchanged at ~18%.
 
-### A. min_bounce floor sweep results
+**Phase 6c:** Tested recency filter (drop pivots >N days old) and significance pre-filter (keep top-N by prominence×bounce). A filter-order bug accidentally inflated results — significance filter was applied globally before price_range, producing only 5–17 candidates/day with misleadingly high F1. Found the bug.
 
- min_bounce  sup_prec  sup_rec  res_prec  res_rec  avg_our_sup  avg_our_res  avg_our_total  our_sup_major%  our_res_major%
-        0.0      53.8     80.7      57.3     46.9         76.2         37.3          113.5            96.4            97.0
-        5.0      53.8     80.7      57.3     46.9         76.2         37.3          113.5            96.4            97.0
-       10.0      54.1     80.6      57.3     46.8         76.3         37.3          113.6            96.8            97.1
-       15.0      54.2     80.1      57.2     46.5         75.6         37.3          113.0            97.1            97.4
-       20.0      53.9     80.0      57.4     46.8         74.8         37.4          112.2            97.1            97.8
-       25.0      54.5     79.5      57.3     46.3         74.5         37.0          111.5            97.6            98.2
-       30.0      54.1     79.3      57.1     46.0         74.1         36.9          111.0            98.0            98.5
-       40.0      54.4     77.0      57.3     45.1         71.9         35.7          107.6           100.0           100.0
+**Phase 6d:** Fixed filter to apply price_range first, then significance. sig_inrange_50 (top 50 in-range pivots): prec=45%, rec=68%, F1=54%. Ceiling broken — but this discards 41% of Mancini's levels that are "modest" pivots. Two paths diverge: match Mancini at the cost of precision, or maximize our own high-confidence system at the cost of coverage.
 
-Mancini major %: supports=42.1%, resistances=41.4%
+### 5.3 Phase 6e: ML on the Deduplicated Pool (Final Model)
 
-### B. Quality cap results (min_bounce=20 applied first)
+**Key insight:** `auto_levels.py`'s own dedup step (min_spacing=3.0, newest-first) already reduces 825 raw candidates to ~108/day. Training ML on those 108 raises the base rate from 6.8% to 50.1% — breaking the precision ceiling cleanly, without discarding any Mancini levels.
 
-                     cap_type  N_sup  N_res  sup_prec  sup_rec  res_prec  res_rec  avg_our
-dynamic (match Mancini count) varies varies      60.8     59.1      61.8     36.6     73.5
-                        fixed     20     20      65.1     27.6      63.9     24.1     36.4
-                        fixed     25     25      65.0     33.9      63.4     28.1     44.4
-                        fixed     30     30      63.8     39.8      63.1     31.8     52.1
-                        fixed     35     35      62.3     45.3      62.4     34.6     59.5
-                        fixed     40     40      60.8     50.3      61.6     37.1     66.6
-                        fixed     45     45      59.5     55.2      60.8     39.1     73.5
-                        fixed     50     50      57.7     59.2      60.3     40.8     80.2
+Pool stats: 108 candidates/day, 54.1 Mancini positives/day (50.1% base rate). Almost all of Mancini's levels survive dedup — the dedup step does the right work; ML just needs to score the 108 and rank them.
 
-### C. Progressive combination summary
+**3-fold expanding-window CV results:**
 
-                config  sup_prec  sup_rec  res_prec  res_rec  avg_our/day  our_sup_maj%  our_res_maj%
-        Baseline (Ph1)      59.6     70.2      60.1     44.0         92.8          96.8          96.7
-       Grid best (Ph2)      53.8     80.7      57.3     46.9        113.5          96.4          97.0
-       + min_bounce=20      53.9     80.0      57.4     46.8        112.2          97.1          97.8
-+ min_bounce=20 +cap45      59.5     55.2      60.8     39.1         73.5          97.7          97.3
-+ min_bounce=20 +cap35      62.3     45.3      62.4     34.6         59.5          97.6          97.0
-
-### Discussion
-- The min_bounce floor filters out weak pivots, improving precision and bringing
-  major/minor ratio closer to Mancini's ~42%.
-- The quality cap (keeping top N by recency/quality) trades recall for precision
-  and level count control.
-- See Excel sheet "P3 Best Combos" for full detail.
-
-### Recommended final parameters
-Based on Phase 3 findings, recommended production parameter set:
-- price_range: 325
-- min_spacing: 3.0
-- min_bounce: 20.0 (Mancini's stated significance threshold)
-- All other params: unchanged from baseline
-
-This is the first parameter with a domain-knowledge justification rather than
-purely empirical tuning.
-
----
-
-## Phase 4 — Short Forward Window Sweep
-**Date:** 2026-04-10
-**Base params:** price_range=325, min_spacing=3.0, min_bounce=20
-
-### Goal
-Find a `forward_bars` value (short range: 2–16 bars = 30min–4hr) where our
-major% matches Mancini's ~42%. Phase 3 showed the bounce criterion rarely
-excludes levels at forward_bars=100 (25hr); the theory was that shorter windows
-would produce smaller bounces, reducing major%.
-
-### Results
-
-| forward_bars | window | sup_rec | our_sup_maj% |
-|---|---|---|---|
-| 2 | 30min | ~76% | ~92% |
-| 5 | 75min | ~71% | ~90% |
-| 16 | 4hr | ~77% | ~93% |
-| 100 | 25hr | ~80% | ~97% |
-
-### Key findings
-1. **Short forward_bars tanks recall**: at 5 bars (75min), many valid pivots
-   haven't bounced 20pts yet → they fail the min_bounce floor and are excluded
-   from the level set entirely (not just classified as minor). Recall dropped
-   from 80% to 71%.
-2. **Major% barely moves**: even at 2 bars (30min), still ~90% major.
-   The `maj_touches=5` criterion is trivially met from years of price history;
-   it alone classifies most levels as major regardless of bounce.
-3. **Conclusion**: `forward_bars` and `maj_touches` cannot be tuned independently.
-   Fixing major% requires attacking both simultaneously. This motivated Phase 5.
-
----
-
-## Phase 5 — 2D Sweep: maj_touches × forward_bars
-**Date:** 2026-04-11
-**Base params:** price_range=325, min_spacing=3.0, min_bounce=0 (so forward_bars
-only affects classification, not inclusion — recall stays intact)
-**Full history:** 215 trading days (2025-03-07 to 2026-04-10)
-
-### Grid
-- `maj_touches`: [5, 8, 10, 12, 15, 20]
-- `forward_bars`: [5, 6, 7, 8, 10, 12, 16, 100]
-- 48 combinations × 215 days
-
-### Key finding: recall is completely flat
-Across all 48 combos, `sup_rec = 80.6%` and `sup_prec = 51.8%` without exception.
-This confirms that `maj_touches` and `forward_bars` are pure classification parameters
-with `min_bounce=0` — they have zero effect on which levels exist, only on solid/dashed.
-
-### Major% results (selected rows)
-
-| maj_touches | forward_bars | window | our_sup_maj% | our_res_maj% |
+| Threshold | Precision | Recall | F1 | Levels/day |
 |---|---|---|---|---|
-| 5 | 5 | 75min | 77.5% | 75.9% |
-| 5 | 100 | 25hr | 90.4% | 92.0% |
-| 8 | 5 | 75min | 61.6% | 63.6% |
-| 10 | 5 | 75min | 45.8% | 52.7% |
-| **12** | **10** | **150min** | **41.8%** | **50.6%** |
-| 12 | 12 | 180min | 42.6% | 51.8% |
-| 15 | 5 | 75min | 26.2% | 34.4% |
-| 20 | 5 | 75min | 19.7% | 22.7% |
-
-### Winner: `maj_touches=12, forward_bars=10`
-Achieves sup_maj% = 41.8% — essentially dead-on Mancini's 42.1%.
-`forward_bars=12` also works (42.6%). `forward_bars=10` preferred as it uses a
-2.5hr bounce window, which is more interpretable than a precise lookback.
-
-### Note on res_maj%
-At the winner combo, res_maj% = 50.6% vs Mancini's 41.4%. The asymmetry is
-structural: resistance levels near ATH have fewer historical touches (price hasn't
-been there before), so they rely more on the bounce criterion to reach major.
-Accepted as a known limitation.
-
-### Updated production defaults
-`auto_levels.py` updated: `maj_touches=12, forward_bars=10`.
-
----
-
-## Phase 5 Supplement — Local Pivot Density Diagnostic
-**Date:** 2026-04-11
-
-### Definition
-For each accepted level, `local_pivot_density` = number of other raw pivot
-candidates (before dedup) within ±10 pts. High density = many pivots clustered
-in a tight zone = ranging market context.
-
-### Results across 215 days
-| Metric | Value |
-|---|---|
-| Avg raw candidates/day | 822.6 |
-| Avg accepted levels/day | 100.1 |
-| Avg acc_avg_density | 37.2 |
-
-### Top ranging days (highest density)
-June 2025 dominates — acc_avg_density 63–73, n_candidates 1000–1600.
-ES was consolidating in a ~150pt range (5980–6200) after the spring rally.
-
-### Top trending days (lowest density)
-Oct 2025, Aug–Sep 2025 — acc_avg_density 17–20, n_candidates 260–430.
-Clean directional moves with well-separated pivots.
-
-### Correlation matrix
-
-| | acc_avg_density | man_total | n_accepted |
-|---|---|---|---|
-| acc_avg_density | 1.00 | **0.18** | 0.45 |
-| man_total | 0.18 | 1.00 | -0.02 |
-| n_accepted | 0.45 | -0.02 | 1.00 |
-
-### Key finding
-**Mancini's level count is nearly uncorrelated with density (r=0.18).** He draws
-a consistent number of levels regardless of whether the market is ranging or trending.
-Our level count inflates moderately with density (r=0.45) — we generate ~15–25 more
-levels on high-density days.
-
-### Implication for ML
-Density-based filtering would reduce our level count on ranging days, but since
-Mancini doesn't do this, it would *hurt* our match to him. However, density remains a
-potentially useful feature for a user-facing "most important levels" filter, decoupled
-from Mancini-match optimization. The ML pivot-quality classifier (Phase 6) should
-include density as a feature and let the model determine its weight from the labels.
-
----
-
-## Phase 6 — ML Pivot Quality Classifier
-**Status:** Planned (as of 2026-04-11)
-
-### Motivation
-Parameter tuning (Phases 1–5) has plateaued at 58% match rate for 4/13/2026.
-The remaining gap is not a knob problem: Mancini applies editorial judgment,
-weights round numbers and clean structural pivots, and draws trendline/channel
-projections above ATH that the pivot detector can never produce. ML trained on
-his labels can learn these preferences implicitly.
-
-### Goal
-Two objectives, listed in priority order:
-1. **Better match to Mancini's levels** — use his 215-day label history as training signal
-2. **Develop our own trading system** — the model may diverge from Mancini where
-   his selection criteria are idiosyncratic; we may find features that predict
-   *tradeable* levels better than Mancini's published list does
-
-### Training data
-- 215 trading days (2025-03-07 to 2026-04-10)
-- Positive labels: Mancini's published levels (within ±2pts match tolerance)
-- Negative labels: our pivot candidates that Mancini did NOT mark
-- Estimated ~8,600 examples (215 days × ~40 candidates/day within price_range)
-- Validation: time-series CV (train on earlier days, test on later days — no lookahead)
-
-### Feature matrix (per pivot candidate)
-
-#### Already computed in auto_levels.py
-| Feature | Description |
-|---|---|
-| bounce | pts price moved from pivot within forward window |
-| touches | count of historical pivot tests within ±touch_zone |
-| distance_from_close4pm | abs(price − close4pm) |
-
-#### New pivot quality features
-| Feature | Description |
-|---|---|
-| local_pivot_density | # other candidates within ±10pts (from Phase 5) |
-| volume_at_pivot | volume of the pivot candle (from 15-min bar) |
-| prominence | how far pivot high/low stands above/below its N neighbors |
-| consolidation_time | # 15-min bars price spent within ±3pts of this level |
-| clean_departure | magnitude of directional move immediately after pivot |
-| prior_breakout | did price previously break through this level (role reversal) |
-| days_since_pivot | trading days between pivot timestamp and anchor date |
-
-#### Price structure features
-| Feature | Description |
-|---|---|
-| round_number_distance | distance to nearest mult of 25, 50, 100 pts |
-| is_half_round | within 2pts of a .50 or .00 price |
-| is_full_round | within 2pts of a price ending in 00 |
-| fibonacci_proximity | distance to nearest Fib retracement of most recent swing |
-
-#### Trendline / channel features (ATH resistance generator)
-| Feature | Description |
-|---|---|
-| trendline_value_at_4pm | projected trendline price at anchor 4pm |
-| trendline_slope | pts/bar — steep lines discounted due to time-of-day uncertainty |
-| trendline_touches | # pivot highs touching this line (fit quality) |
-| channel_projection | parallel channel upper line projected to anchor 4pm |
-| fib_extension | 127.2%, 161.8%, 200% extension of prior significant swing |
-
-### Trendline time-of-day consideration
-A trendline with non-zero slope gives a different price at every bar.
-Solution: compute trendline value at the **prior 4pm close** (anchor moment),
-and include **slope** as a feature. The ML learns to discount steep trendlines
-(large intraday uncertainty) vs. shallow/flat ones (reliable fixed price).
-This captures the insight that steep trendlines are unreliable as exact price targets.
-
-### Model
-- Gradient boosted trees (XGBoost or LightGBM) — handles tabular data, interpretable
-  feature importance, robust at ~8k examples
-- Binary classification: is this pivot a Mancini level? (yes/no)
-- Output: probability score per candidate
-- Replace hard include/exclude rules with score-ranked acceptance (top N per day,
-  or all above probability threshold)
-
-### Expected outputs
-- Feature importance ranking: which signals Mancini actually responds to
-- Probability scores per candidate on each day
-- Recall/precision vs. current rule-based system (target: >80% recall, >60% precision)
-- Insight into whether our own system should diverge from Mancini's labels
-
-### Script plan
-`backend/analysis_phase6.py` — feature extraction + model training + evaluation
-`backend/feature_builder.py` — standalone feature matrix builder (reusable)
-
----
-
-## Phase 6a — Results
-**Date:** 2026-04-11
-**Script:** `backend/analysis_phase6.py`
-
-### Nearest-neighbour relabelling (critical fix)
-Raw label positive rate: 60.8% — when ~1000 candidates/day each check against 107 Mancini
-levels with ±2pt tolerance, ~60% fall near some level. Too noisy for ML.
-Fix: for each Mancini level, only the single closest candidate within ±2pts gets label=1.
-Result: 12,069 positives / 178,303 rows = 6.8% positive rate, 55.9/day.
-
-### Split
-- Train: 172 dates (121,095 rows, 7.5% positive)
-- Test: 44 dates (57,208 rows, 5.2% positive)
-
-### Feature importance
-
-| Feature | Importance |
-|---|---|
-| touches | 0.210 |
-| dist_d5 | 0.116 |
-| pivot_type | 0.091 |
-| local_density | 0.075 |
-| dist_from_4pm | 0.069 |
-| clean_departure | 0.052 |
-| dist_d50 | 0.049 |
-| vol_zscore | 0.047 |
-| bounce | 0.047 |
-| dist_d100 | 0.042 |
-| prominence | 0.042 |
-| dist_d25 | 0.041 |
-| consolidation | 0.039 |
-| recency_rank | 0.033 |
-| days_since_pivot | 0.028 |
-| is_support | 0.020 |
-
-### Threshold sweep (test set)
-
-| threshold | prec | rec | f1 | levels/day |
-|---|---|---|---|---|
-| 0.05 | 5.8% | 99.3% | 11.0% | 1167.0 |
-| 0.10 | 6.8% | 97.0% | 12.8% | 967.8 |
-| 0.20 | 9.1% | 87.9% | 16.5% | 657.1 |
-| 0.30 | 11.8% | 75.8% | 20.3% | 440.0 |
-| 0.40 | 14.4% | 62.1% | 23.4% | 294.4 |
-| **0.50** | **18.7%** | **49.7%** | **27.2%** | **181.0** |
-
-Best F1: thr=0.50; avg ML recall/day=50.5%, avg ML levels/day=181.0, avg Mancini/day=68.2
-
-### Root cause analysis
-Pool size ~1000 candidates/day with ~55 true positives (5.5% base rate).
-Even a perfect discriminator can't achieve high precision from a 1-in-18 base rate
-when the pool is that large. Precision ceiling ~18% is structural, not a model problem.
-Solution: shrink candidate pool before training.
-
----
-
-## Phase 6b — Round 2: New Features + 3-Fold CV
-**Date:** 2026-04-11
-**Script:** `backend/analysis_phase6b.py`
-
-### New features added
-- `sr_flip`: did this level previously serve the opposite role (support-became-resistance or vice versa)?
-- `price_crossings`: how many times did close cross through this price level historically?
-- `is_mult5`: binary flag — rounded price is a multiple of 5
-- `dist_round_to_mult5`: distance from rounded price to nearest mult-of-5
-
-### Key findings
-
-**Round-number features collectively important:** dist_d5 (#2) + dist_round_to_mult5 + is_mult5
-together contribute ~0.205 importance — equal to touches (#1). Strong confirmation that Mancini
-weights multiples of 5. However, blind rounding to nearest mult-of-5 is wrong — not all his
-levels are multiples of 5. The model learns the nuance from labeled data.
-
-**sr_flip surprisingly weak (importance 0.028):** Implementation uses raw bar highs/lows in a
-500-bar lookback window — triggers too easily and is too noisy. Better approach: check whether
-actual pivot highs/lows (confirmed with N-bar confirmation) exist near the price. Flagged for Phase 6c.
-
-### CV results (3-fold expanding window)
-
-| Fold | Test period | thr=0.50 prec | rec | f1 |
-|---|---|---|---|---|
-| 1 | Earlier period | 18.1% | 62.9% | 28.1% |
-| 2 | Dec 2025–Apr 2026 (ATH + selloff) | 18.2% | 43.8% | 25.7% |
-
-**Distribution shift confirmed:** Fold 2 (ATH regime + sharp selloff of Apr 2026) generalizes
-worse than Fold 1. The model trained on 2025 data doesn't transfer as well to the ATH/selloff
-regime. This is expected — Mancini's level placement changes character in extreme market conditions.
-
-### Precision ceiling unchanged (~18%)
-Adding new features did not break the ceiling. Root cause is structural: pool size ~1000/day.
-Feature engineering alone cannot fix this. Must reduce pool size.
-
----
-
-## Phase 6c — Candidate Pool Reduction (Filter Order Bug)
-**Date:** 2026-04-11
-**Script:** `backend/analysis_phase6c.py`
-
-### Strategies tested
-1. **Recency filter** (`max_pivot_age_days`): drop pivots older than N days
-2. **Significance filter** (`top_n_per_window`): keep top N by prominence×bounce
-3. Improved sr_flip: confirmed pivot arrays instead of raw bar h/l (implemented in feature_builder)
-
-### Results (thr=0.50, avg across folds)
-
-| Config | Cand/day | Pos% | Prec | Rec | F1 | Lvls/day |
-|---|---|---|---|---|---|---|
-| baseline | 825 | 6.8% | 17.8% | 54.0% | 26.6% | 172 |
-| recency_365d | 822 | 6.8% | 17.8% | 53.6% | 26.6% | 170 |
-| recency_180d | 673 | 7.9% | 21.6% | 43.0% | 28.6% | 109 |
-| sig_top50 (buggy) | 5 | 54.3% | 55.5% | 61.9% | 57.9% | 5 |
-| rec365_sig50 (buggy) | 17 | 50.1% | 66.9% | 69.6% | 68.2% | 9 |
-| rec180_sig30 (buggy) | 27 | 48.5% | 59.5% | 61.8% | 60.5% | 17 |
-
-### Critical bug discovered
-Significance filter was selecting top-N globally from all of history, THEN applying
-the ±325pt price_range filter. The globally top-50 pivots span the entire 2-year
-ES price range (3000+ pts); only 5–17 happened to be within ±325pts of current price.
-This accidentally created excellent F1 (68-60%) by making the pool tiny, but with only
-5–17 candidates/day vs Mancini's 55/day, absolute coverage was ~12–30%.
-
-**Fix (Phase 6d):** apply price_range filter FIRST, then significance filter picks top N
-from the ~825 in-range candidates.
-
-### sr_flip improvement confirmed
-In rec180_sig30, sr_flip jumped to #1 importance at 0.239 (was 0.028 in baseline).
-The confirmed-pivot implementation provides genuine signal when the pool is curated.
-
----
-
-## Phase 6d — Fixed In-Range Significance Filter
-**Date:** 2026-04-11
-**Script:** `backend/analysis_phase6d.py`
-
-### Fix implemented
-`feature_builder.py` updated: price_range filter applied before significance selection.
-`sig_inrange_50` = keep top 50 pivot highs + top 50 pivot lows from the ~825 candidates
-already within ±325pts of current price.
-
-### Results (thr=0.50, avg across folds)
-
-| Config | Cand/day | Pos% | Prec | Rec (in-pool) | F1 | Lvls/day |
-|---|---|---|---|---|---|---|
-| sig_inrange_100 | 200 | 22.5% | 36.2% | 59.4% | 44.9% | 78 |
-| sig_inrange_75 | 150 | 26.8% | 39.4% | 61.0% | 47.9% | 66 |
-| **sig_inrange_50** | **100** | 32.6% | **45.0%** | **68.2%** | **54.2%** | **52** |
-| **sig_inrange_30** | **60** | 39.3% | **50.2%** | **63.8%** | **56.2%** | **32** |
-| rec180_sig_ir50 | 100 | 32.7% | 45.7% | 62.5% | 52.8% | 47 |
-
-### Key findings
-
-**Ceiling broken:** Precision rose from 18% → 45–50%. F1 from 27% → 54–56%.
-
-**Significance pre-filter recall ceiling:** sig_inrange_50 has 32.6 positives/day from a
-55/day Mancini baseline = 59% of Mancini's levels are in the top-50 by quality. The other
-41% are "modest" pivots (context levels, recently-formed levels, ATH reference levels).
-**Absolute Mancini coverage = 68% × 59% ≈ 40%** — worse than baseline for Mancini-matching,
-but much better for our own high-confidence trading system.
-
-**Regime stability:** sig_inrange_30 Fold2 (ATH+selloff) f1=56.3% ≈ Fold1 56.1% — the
-significance filter makes the model more regime-stable than baseline (where Fold2 was 25.7%).
-
-**Feature importance shift:** With pre-selected quality pivots, `local_density` and
-`dist_from_4pm` top the list (not `touches`). Among structurally prominent pivots,
-*location* matters more than *how many times it's been touched*.
-
-**Recency filter adds nothing** when combined with in-range sig filter: rec180_sig_ir50
-(52.8%) is slightly worse than sig_inrange_50 (54.2%). Almost all in-range pivots are
-from the recent year anyway (ES in same price zone).
-
-### Two paths diverge here
-
-**Path 1 — Match Mancini:** Baseline recall of 80% of his levels (at thr=0.30, 300+/day)
-is superior for coverage. Significance filter sacrifices 40% of his levels for higher precision.
-Not recommended if goal is full Mancini replication.
-
-**Path 2 — Own trading system:** sig_inrange_30 (32 levels/day, 50% precision) or
-sig_inrange_50 (52 levels/day, 45% precision). These are the structurally strongest,
-most-tested, round-number-aligned levels in the ES. One in two predictions is a genuine
-institutional level — actionable without manual review.
-
----
-
-## Phase 6e — ML on Deduplicated Pool (Best Result)
-**Date:** 2026-04-11
-**Script:** `backend/analysis_phase6e.py`
-**Key insight:** The auto_levels.py dedup step (min_spacing=3.0, newest-first) already
-reduces 825 raw candidates to ~108/day. Training ML on those 108 instead of 825 raises
-the base rate from 6.8% to 50.1% — breaking the precision ceiling cleanly.
-
-### Pool stats
-- Candidates/day: 108 (after dedup, pre-ML)
-- Mancini positives/day: 54.1 (50.1% base rate)
-- Almost all Mancini levels survive dedup — dedup already does good work
-
-### CV Results (3-fold expanding window, avg across folds)
-
-| thr | Prec | Rec | F1 | Levels/day |
-|---|---|---|---|---|
-| 0.30 | 56.8% | 91.8% | **70.2%** | 90 |
+| 0.30 | 56.8% | 91.8% | 70.2% | 90 |
 | 0.40 | 59.3% | 82.4% | 69.0% | 77 |
 | 0.50 | 61.8% | 67.0% | 64.1% | 60 |
 | 0.60 | 64.6% | 45.4% | 52.4% | 38 |
 
-**Best operating point: thr=0.30** — finds 92% of Mancini's levels, outputs 90/day
-(vs his 55), F1=70.2%. Only 35 extras to visually discard, vs 117 extras at baseline.
+**Comparison across all phases:**
 
-### Comparison across all phases
-
-| Phase | Prec | Rec | F1 | Lvls/day |
+| Phase | Precision | Recall | F1 | Levels/day |
 |---|---|---|---|---|
 | 6a baseline (825 cand) | 18.7% | 49.7% | 27.2% | 181 |
 | 6d sig_inrange_30 | 50.2% | 63.8% | 56.2% | 32 |
-| **6e thr=0.30 (108 cand)** | **56.8%** | **91.8%** | **70.2%** | **90** |
-| 6e thr=0.50 | 61.8% | 67.0% | 64.1% | 60 |
+| **6e thr=0.30** | **56.8%** | **91.8%** | **70.2%** | **90** |
 
-### Feature importance (final model — all data)
+**Feature importance (final model):**
 
 | Feature | Importance | Notes |
 |---|---|---|
-| dist_from_4pm | 0.103 | Distance from current price — #1 discriminator after dedup |
-| sr_flip | 0.078 | S/R role reversal — jumped from #15 (0.028) to #2 |
+| dist_from_4pm | 0.103 | Distance from current price — top discriminator after dedup |
+| sr_flip | 0.078 | S/R role reversal — jumped from 0.028 on raw pool |
 | recency_rank | 0.062 | How recent the pivot bar |
 | local_density | 0.060 | Cluster density within deduped pool |
 | price_crossings | 0.055 | Times price crossed through this level |
 | is_mult5 | 0.051 | Multiple of 5 flag |
 | dist_d25 | 0.049 | Distance to nearest 25pt multiple |
 | bounce | 0.048 | Price rejection magnitude |
-| touches | 0.046 | Touch count (was #1 at 0.21 in raw pool) |
+| touches | 0.046 | Was #1 at 0.21 on raw pool — all survivors have decent touch counts after dedup |
 
-After dedup, `touches` fell from #1 to #9 — all survivors have decent touch counts.
-What discriminates is *where* the level is (dist_from_4pm) and whether it's an S/R flip.
+After dedup, `touches` fell from #1 to #9. What discriminates is *where* the level is and whether it's an S/R flip, not raw touch count.
 
-### Fold comparison (distribution shift)
-- Fold 1 thr=0.50: prec=61.2%, rec=74.9%, F1=67.4%
-- Fold 2 thr=0.50 (ATH+selloff): prec=62.3%, rec=59.1%, F1=60.7%
-Recall drops in the ATH regime (same as all previous phases) but precision holds.
-Fold 2 is still vastly better than baseline's 25.7% F1.
+### 5.4 Integration
 
-### Recommended integration
-- Run auto_levels.py dedup as before (gets ~108 candidates/day)
-- Score each with phase6e_model.json
-- Display all above thr=0.30 (90/day) — show score as visual indicator
-- Or filter to thr=0.40 (77/day) for tighter output at 59% precision + 82% recall
-- Model saved: `data/phase6e_model.json`
+The Phase 6e model (`data/phase6e_model.json`) is wired into `backend/auto_levels.py`. Every accepted level carries a `score` field (0–1). `major = score ≥ 0.5` (solid line); below 0.5 is minor (dashed). The `min_score` setting in the Auto Levels tab filters the displayed set client-side — dragging it up trims low-confidence extras in real time without regenerating.
+
+### 5.5 Validation: 4/13/2026 vs Mancini's Published Levels
+
+Anchor: 2026-04-10 4pm ET, close4pm=6855.5.
+
+**Supports (42 Mancini in range, 83 generated):**
+- Matched ±2pt: 41/42 = **98%**
+- Miss: only 6702.0
+- 31 extras are genuine historical pivots; Mancini curates for newsletter clarity
+- 29 of Mancini's other supports lie below our ±325pt floor (6273–6527 range)
+
+**Resistances (36 Mancini in range, 44 generated):**
+- Matched ±2pt: 24/36 = **67%**
+- Miss: 12 levels in the 7048–7139 ATH zone
+- The gap is structural: market ran through that zone briefly without forming clean 5-bar swing highs. No parameter or ML change can fix this — the pivots don't exist in the data. Addressed separately (see Section 7).
 
 ---
 
-## Phase 6e — Validation: 4/13/2026 vs Mancini's Published Levels
+## 6. Score Filter (min_score)
 
-**Date:** 2026-04-11  
-Anchor: 2026-04-10 4pm ET, close4pm = 6855.5
+After integration, a `min_score` setting was added to the Auto Levels tab. It filters the already-fetched level set client-side (the `score` field is on every returned level). Default is 0.0 (show all). Setting it to 0.35 trims low-confidence extras while retaining virtually all Mancini-matched levels.
 
-### Supports (42 Mancini in range, 83 generated)
-- Matched ±2pt: **41/42 = 98%**
-- Only miss: 6702.0
-- Mancini's other 29 supports (6273–6527) are below our ±325pt floor — structural, not fixable without widening price_range
-- Our 31 extras are genuine historical pivots the model is confident about (ML score 0.35–0.86); Mancini curates for clarity
+Score distribution at 4/13/2026:
+- All 41 matched supports scored 0.22–0.858 (median 0.631)
+- Only 2 matched supports below 0.30 — these are the weakest in Mancini's own list
+- At thr=0.35: lose 1 Mancini support, remove 12 low-confidence extras
 
-### Resistances (36 Mancini in range, 44 generated)
-- Matched ±2pt: **24/36 = 67%**
-- Miss 12 levels in 7048–7139 zone: `7048, 7052, 7053, 7057, 7067, 7074, 7086, 7094, 7100, 7122, 7130, 7139`
-- All 12 are within our ±325pt range — issue is pivot geometry near ATH; market ran up there briefly without forming clean 5-bar swing highs that the algorithm detects
+---
 
-### Score filter impact (on matched Mancini levels)
-| thr | Sup kept | Sup match | Res kept | Res match |
-|---|---|---|---|---|
-| 0.25 | 78 | 41/42 | 42 | 24/36 |
-| 0.30 | 76 | 40/42 | 38 | 23/36 |
-| 0.35 | 71 | 40/42 | 36 | 23/36 |
-| 0.40 | 61 | 39/42 | 32 | 23/36 |
+## 7. Major/Minor Distinction Study (Phase 7)
 
-At thr=0.35: lose 1 Mancini support (score=0.22 and 0.28 — genuinely weak pivots), save 12 lines from display.
-ATH resistance gap is not affected by threshold — those 12 levels simply aren't generated.
+With the ML model integrated and performing well on level *selection*, we turned to the question of whether the major/minor classification could be improved — specifically, whether Mancini's own `(major)` labels could be predicted from the features we have.
 
-### Matched support score distribution
-All 41 matched supports scored 0.22–0.858 (median 0.631). Only 2 below 0.30.
-The 31 extras with score ≥ 0.35 are real levels; Mancini just doesn't publish all of them.
+### 7.1 Data
 
-### Next tasks
-1. **Score filter UI** — `min_score` setting (default 0.0) in Auto Levels settings tab; pass through API; filter before returning
-2. **ATH cluster detection** — after standard dedup, add top-N highest/lowest pivots in lookback window not already within 5pt of an accepted level; captures the ATH resistance cluster pivot geometry misses
+The 3-class relabeling was: 0 = algo candidate not in Mancini's list, 1 = Mancini minor, 2 = Mancini major. Across 216 days: 4,870 major, 6,823 minor (41.6% major — matching his published ratio closely).
+
+### 7.2 Feature comparison: major vs minor
+
+Mann-Whitney U tests across all features. Only a few were statistically significant:
+
+| Feature | Major | Minor | p-value |
+|---|---|---|---|
+| dist_d25 | 6.02 | 6.43 | <0.0001 |
+| recency_rank | 2248 | 2534 | <0.0001 |
+| days_since_pivot | 24.0 days | 27.1 days | <0.0001 |
+| pivot_type | 47% highs | 44% highs | 0.0009 |
+
+Notably: **dist_from_4pm is not significant** (p=0.56). Major levels are not closer to the 4pm close than minor ones — confirmed flat across all distance bands (42% major rate from 0–50pts through 200–325pts). A decision tree on Mancini vs minor levels reached only 59.7% accuracy with a 41.6% baseline — barely above guessing.
+
+### 7.3 Recency rule
+
+The most promising signal was recency_rank. Hypothesis: when two levels are near each other, Mancini keeps the more recent one as major. Tested at proximity thresholds D=5 to D=100pts.
+
+Result: at every D, the major is the more recent level only ~52% of the time — essentially a coin flip. The hypothesis does not hold.
+
+### 7.4 Major-major spacing
+
+Visual inspection suggested major levels are always well-spaced from each other. Confirmed in data:
+- 93% of adjacent major-major gaps are ≥ 6pts
+- 90% are ≥ 8pts (median gap 15pts, mean 16.7pts)
+- Minor levels fill the gaps (median gap 11pts, 17% under 6pts)
+
+This is a real structural pattern. However, applying it as a post-processing rule — enforcing minimum major spacing by demoting the lower-scored of a close pair — requires the ML score to reliably discriminate within close pairs. It doesn't: when a Mancini major and minor are within 6–8pts of each other, the major has higher bounce only 49% of the time, higher touches 44% of the time, and is more recent 52% of the time. The score can't pick the right one.
+
+### 7.5 Conclusion
+
+Mancini's major/minor distinction is not reliably learnable from pivot geometry with the features available. The differences between his major and minor levels are real but small across every feature tested. His classification likely reflects holistic judgment — zone significance in context, prior-week price action, structural importance — that can't be reconstructed from a single day's pivot history. The `min_score` filter is the appropriate control: it trims low-confidence levels from the total set, without pretending to replicate a distinction we can't reliably learn.
+
+---
+
+## 8. Remaining Gap: ATH Cluster Detection
+
+The 12 missing resistances in the 7048–7139 zone are a structural problem: market ran through that zone quickly during the late-2025 ATH run without forming the clean 5-bar confirmed swing highs the algorithm requires. Mancini identifies those levels from prior consolidation clusters and channel projections that the pivot detector cannot see.
+
+Proposed fix (task 2): after standard dedup, scan for the top-N highest pivot highs in the lookback window that are not already within 5pts of an accepted level. These represent price clusters that were visited but didn't produce clean confirmed pivots. Details to be designed and tested.
+
+---
+
+## 9. Scripts and Outputs
+
+| File | Purpose |
+|---|---|
+| `backend/analyze_levels.py` | Phase 1 baseline analysis |
+| `backend/sweep_levels.py` | Phase 1 one-at-a-time parameter sweep |
+| `backend/analysis_phase2.py` | Phase 2 major/minor study + 2D grid search |
+| `backend/analysis_phase3.py` | Phase 3 min_bounce + quality cap |
+| `backend/analysis_phase4.py` | Phase 4 short forward window sweep |
+| `backend/analysis_phase5.py` | Phase 5 maj_touches × forward_bars grid |
+| `backend/analysis_phase6.py` | Phase 6a ML baseline (raw pool) |
+| `backend/analysis_phase6b.py` | Phase 6b new features |
+| `backend/analysis_phase6c.py` | Phase 6c pool reduction (filter-order bug found) |
+| `backend/analysis_phase6d.py` | Phase 6d fixed in-range significance filter |
+| `backend/analysis_phase6e.py` | Phase 6e ML on deduped pool — final model |
+| `backend/feature_builder.py` | Feature matrix builder (shared by all Phase 6 scripts) |
+| `backend/analysis_major_minor.py` | Phase 7a feature comparison, major vs minor |
+| `backend/analysis_recency_rule.py` | Phase 7b recency rule + spacing study |
+| `data/phase6e_model.json` | Production ML model (XGBoost) |
+| `data/auto_levels_analysis.xlsx` | Phase 1–5 results (8 worksheets) |
+| `data/major_minor_analysis.xlsx` | Phase 7a results |
+| `data/recency_rule_analysis.xlsx` | Phase 7b results |

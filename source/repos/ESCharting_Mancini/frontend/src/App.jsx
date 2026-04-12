@@ -66,6 +66,7 @@ const DEFAULT_SETTINGS = {
     showMajorOnly:   false,
     showSupports:    true,
     showResistances: true,
+    minScore:        0.0,
   },
 }
 
@@ -153,18 +154,23 @@ export default function App() {
   }, [levelsDate])
 
   // Merge manual + auto levels based on individual visibility toggles.
+  // min_score filters auto levels client-side (score field already present on each level).
   // Chart always receives a single merged object (or null).
   const mergedLevels = useMemo(() => {
+    const minScore = settings.autoLevels.minScore
+    const scoreOk = l => minScore <= 0 || l.score == null || l.score >= minScore
+    const autoSups = autoVisible && autoLevelsData ? autoLevelsData.supports.filter(scoreOk)    : []
+    const autoRess = autoVisible && autoLevelsData ? autoLevelsData.resistances.filter(scoreOk) : []
     const sups = [
-      ...(manualVisible && levelsData     ? levelsData.supports     : []),
-      ...(autoVisible   && autoLevelsData ? autoLevelsData.supports : []),
+      ...(manualVisible && levelsData ? levelsData.supports     : []),
+      ...autoSups,
     ]
     const ress = [
-      ...(manualVisible && levelsData     ? levelsData.resistances     : []),
-      ...(autoVisible   && autoLevelsData ? autoLevelsData.resistances : []),
+      ...(manualVisible && levelsData ? levelsData.resistances  : []),
+      ...autoRess,
     ]
     return (sups.length || ress.length) ? { supports: sups, resistances: ress } : null
-  }, [manualVisible, autoVisible, levelsData, autoLevelsData])
+  }, [manualVisible, autoVisible, levelsData, autoLevelsData, settings.autoLevels.minScore])
 
   async function handleGenerateAutoLevels(targetDate) {
     const p = settings.autoLevels

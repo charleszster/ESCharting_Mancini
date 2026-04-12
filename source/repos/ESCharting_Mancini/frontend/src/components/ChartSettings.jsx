@@ -354,6 +354,13 @@ export default function ChartSettings({ value, onChange, onClose }) {
                 <CheckRow label="Major only"        value={value.autoLevels.showMajorOnly}   onChange={v => set('autoLevels.showMajorOnly',   v)} />
                 <CheckRow label="Show supports"     value={value.autoLevels.showSupports}     onChange={v => set('autoLevels.showSupports',     v)} />
                 <CheckRow label="Show resistances"  value={value.autoLevels.showResistances}  onChange={v => set('autoLevels.showResistances',  v)} />
+                <SliderRow
+                  label="Min score"
+                  value={value.autoLevels.minScore}
+                  onChange={v => set('autoLevels.minScore', v)}
+                  min={0.0} max={0.95} step={0.05}
+                  fmt={v => v === 0 ? 'off' : v.toFixed(2)}
+                />
               </Section>
             </>
           )}

@@ -184,6 +184,7 @@ def compute_auto_levels(
     maj_touches:      int   = 12,
     forward_bars:     int   = 10,
     min_bounce:       float = 0.0,
+    min_score:        float = 0.0,
     show_major_only:  bool  = False,
     show_supports:    bool  = True,
     show_resistances: bool  = True,
@@ -372,6 +373,10 @@ def compute_auto_levels(
     # Filter show_major_only after scoring (respects ML major)
     if show_major_only:
         accepted = [a for a in accepted if a['major']]
+
+    # Filter by min_score (only when model is available and min_score > 0)
+    if min_score > 0.0 and model is not None:
+        accepted = [a for a in accepted if (a.get('score') or 0.0) >= min_score]
 
     def _clean(lst):
         return [

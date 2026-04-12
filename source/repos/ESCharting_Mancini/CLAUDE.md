@@ -20,14 +20,14 @@ Single user, Windows, 1080p, light theme.
 ## CSV source data
 - Path: C:\Users\charl\Dropbox\Investing\Futures\Mancini FBDs\GLBX-20260329-F35ETXBBU3\glbx-mdp3-20160329-20260325.ohlcv-1m.csv
 - Columns: ts_event, rtype, publisher_id, instrument_id, open, high, low, close, volume, symbol
-- Prices are already in dollar format — NO scaling needed (CLAUDE.md previously said divide by 1e9, that was wrong)
+- Prices are already in dollar format — NO scaling needed
 
 ## Trade log
 - Path: C:\Users\charl\Dropbox\Investing\Futures\Trades - MES.xlsm
 - Sheet: Consolidated Mancini FBD Trades
 - Configured via .env: TRADES_FILE and TRADES_SHEET variables
-- 70 trades as of Apr 2026, date range 2025-10-29 to 2026-03-30
-- Columns: Entry Date/Time/Qty/Price, Exit 1–N Date/Time/Qty/Price (dynamic, any number), Total Commission, Net P/L
+- ~70 trades as of Apr 2026, date range 2025-10-29 to 2026-03-30
+- Columns: Entry Date/Time/Qty/Price, Exit 1–N Date/Time/Qty/Price (dynamic), Total Commission, Net P/L
 - Entry Qty > 0 = long, < 0 = short
 - File is NEVER written to — read-only openpyxl
 
@@ -36,35 +36,21 @@ Single user, Windows, 1080p, light theme.
 - Databento API key: stored in .env (user fills in manually)
 
 ## Feature summary
-All core features are complete as of Apr 2026. Key capabilities:
+All core features are complete. Key capabilities:
 - Candlestick chart with real ES 1-min data (2016–2026), multi-timeframe aggregation
 - Trade list (left panel) + detail (right panel), markers on chart, clicking a trade zooms chart
-- **Batch view** (top of left panel): show all trades in a date range simultaneously; filter by All / Winners / Losers (unlit until selected, clear to unlit on Clear); "Show on chart" is neutral until active, then turns blue; chart auto-spans first entry −28 days to last exit +28 days; clicking a trade exits batch mode and zooms to it
+- **Batch view**: show all trades in a date range simultaneously; filter by All/Winners/Losers; "Show on chart" turns blue when active; chart auto-spans first entry −28 days to last exit +28 days; clicking a trade exits batch mode and zooms to it
 - Manual and auto support/resistance levels, both editable/toggleable
 - Adjusted/non-adjusted price mode toggle (additive back-adjustment, TV-compatible)
-- Databento data download (SSE streaming, retry loop for 422s, precise start timestamp to avoid redundant rows) and TradingView CSV import
-- ETH/RTH session shading, full chart settings modal (7 tabs), crosshair modes
-- Reset view button (⊡): pins latest bar at 120px from right, shows 270 bars (constant RESET_BARS in Chart.jsx)
+- Databento data download (SSE streaming, retry loop for 422s, precise start timestamp) and TradingView CSV import
+- ETH/RTH session shading, full chart settings modal (8 tabs), crosshair modes
+- Reset view button (⊡): pins latest bar at 120px from right, shows 270 bars (RESET_BARS in Chart.jsx)
 - start.bat launches both backend and frontend; browser opens at localhost:5173
 
 ## Roll calendar rule
 - Roll at 18:00 ET on the Monday of the expiry week (= 3rd Friday of expiry month − 4 days)
 - Confirmed against TradingView export for Sep-2025, Dec-2025, Mar-2026 rolls
 - In UTC: 22:00 UTC during EDT (Mar–Nov), 23:00 UTC during EST (Nov–Mar)
-- After fix: max 10pt diff vs TV (was ±51pt), 8 bars in 3264 differ slightly (feed noise)
-
-## What's next
-- Step 10: Auto level ML classifier (Phase 6) — **integration complete**; two UI/algo improvements queued
-  - Phase 6e model (phase6e_model.json) is wired into auto_levels.py; each level carries a `score` field
-  - `major` is now determined by ML score ≥ 0.5 (was bounce/touches heuristic)
-  - **4/13/2026 comparison vs Mancini's published levels:**
-    - Supports (in range): 41/42 matched ±2pt (98%). Miss only 1. 31 extras, but model is confident in most.
-    - Resistances (in range): 24/36 matched ±2pt (67%). Miss 12 levels in 7048–7139 ATH zone.
-    - ATH resistance gap is structural: market ran up there briefly, no clean pivot formations for algo to find.
-  - **Next two tasks (in priority order):**
-    1. **Score filter UI** — add `min_score` parameter (default 0.0, e.g. 0.35 removes low-conf extras without losing Mancini matches) as a setting in the Auto Levels tab; pass through backend API; filter before returning levels
-    2. **ATH cluster detection** — after standard dedup, scan for top-N highest pivot highs in lookback window not already covered by an accepted level (within 5pt); adds the "ATH resistance cluster" that pivot geometry misses near the top of the prior move
-  - See docs/auto_level_study.md for full methodology and results
 
 ## Auto level generation methodology
 Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `backend/auto_levels.py`.
@@ -77,75 +63,74 @@ Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `ba
 ### Pivot detection
 - Confirm pivot highs and lows using N bars on each side (default N=5, configurable)
 - A pivot high at bar i: `high[i] > high[i-k]` and `high[i] > high[i+k]` for all k in [1..N]
-- A pivot low at bar i: symmetric
 - Only pivots with timestamp ≤ 4pm anchor bar are considered (no future data leakage)
 
-### Level classification (corrected from Pine Script)
-- Pine Script always maps pivot highs → resistance and pivot lows → support
-- Correct behavior: classification is by price location relative to `close4pm`, not pivot type
-  - Pivot (high or low) with price > `close4pm` → **resistance**
-  - Pivot (high or low) with price < `close4pm` → **support**
-  - This captures "prior support acting as resistance" and vice versa
+### Level classification
+- Classification is by price location relative to `close4pm`, not pivot type
+  - Pivot (high or low) with price > `close4pm` → resistance
+  - Pivot (high or low) with price < `close4pm` → support
+- Pivots processed newest-first; deduplication: skip if within `minSpacing` pts of any accepted level
 
-### Candidate filtering
-- Price must be within ±325 pts of `close4pm` (configurable)
-- Pivots processed newest-first (reverse chronological) — most recent test of a price zone wins
-- Deduplication: if new candidate is within `minSpacing` pts (default 3.0) of any already-accepted level, skip it
+### ML scoring (Phase 6e)
+- After dedup (~108 candidates/day), every level is scored 0–1 by `data/phase6e_model.json` (XGBoost)
+- `major = score ≥ 0.5` (solid line); below 0.5 = minor (dashed line)
+- Falls back to bounce/touches heuristic if model file not available
+- Top features: dist_from_4pm, sr_flip, recency_rank, local_density, price_crossings, round-number proximity
 
-### Bounce measurement (strength signal)
-- Bounce follows the **pivot type**, not the support/resistance classification:
-  - Pivot high at price P, time T: find min pivot low in (T, T + N_forward bars] → `bounce = P − min_low`
-  - Pivot low at price P, time T: find max pivot high in same window → `bounce = max_high − P`
-- This measures how strongly price was historically rejected from the level, regardless of its current role
-- A pivot low above close4pm (acting as resistance) still measures bounce as max_high_after − P
-- Default N_forward = 10 bars (= 2.5 hrs on 15-min) — tuned in Phase 5 (was 100)
+### Validation results (4/13/2026 vs Mancini's published levels)
+- Supports: 41/42 matched ±2pt (98%); 31 extras (genuine pivots Mancini curates out)
+- Resistances: 24/36 matched ±2pt (67%); 12 misses in the ATH zone (7048–7139)
+- ATH gap is structural: market ran through that zone without forming clean confirmed pivots
 
-### Touch counting (confluence signal)
-- Count all pivot highs AND pivot lows (timestamp ≤ 4pm anchor) within ±`touchZone` pts (default 2.0) of P
-- Forward touches (after 4pm) are excluded — avoids future data leakage
-
-### Major vs. minor classification
-- `isMajor = bounce ≥ majBounce (default 40 pts)  OR  touches ≥ majTouches (default 12)`
-- Minor = everything else (drawn as dashed line)
-- Defaults tuned via 5-phase parameter study (see docs/auto_level_study.md) to match Mancini's ~42% major ratio
-
-### Configurable parameters (new Settings tab)
+### Configurable parameters (Auto Levels tab in ⚙ settings)
 | Parameter | Default | Notes |
 |---|---|---|
 | Pivot lookback (bars/side) | 5 | integer |
-| Price range (±pts) | 325 | float — tuned in Phase 2 (was 250) |
+| Price range (±pts) | 325 | float |
 | Min level spacing (pts) | 3.0 | float |
 | Touch zone (±pts) | 2.0 | float |
-| Major bounce threshold (pts) | 40 | float |
-| Major touch threshold | 12 | integer — tuned in Phase 5 (was 5) |
-| Bounce forward window (bars) | 10 | integer — tuned in Phase 5 (was 100) |
+| Major bounce threshold (pts) | 40 | float — classification only |
+| Major touch threshold | 12 | integer — classification only |
+| Bounce forward window (bars) | 10 | integer — classification only |
+| Min score | 0.0 | float 0–0.95 — client-side filter on ML score; "off" at 0 |
 | Show major only | false | toggle |
 | Show supports | true | toggle |
 | Show resistances | true | toggle |
 
 ### Storage and UI
-- Auto levels are NOT saved to levels.db — computed in memory only, displayed in read-only collapsible section
-- Date picker represents the day levels are FOR (anchor = prior trading day's 4pm); blank = most recent 4pm in parquet
-- Auto levels do NOT update when user clicks a trade (manual levels do) — auto levels stay pinned to selected date
-- Manual and auto levels each have an independent on/off toggle in the right panel (no master toggle)
-- Displayed on chart alongside manual levels, same visual style (green/red, solid/dashed)
-- "Auto Levels" tab in ⚙ settings modal exposes all parameters; "Copy to editor" removed — use read-only section to copy text
+- Auto levels are NOT saved to levels.db — computed in memory only
+- Date picker: the day levels are FOR (anchor = prior trading day's 4pm); blank = most recent 4pm in parquet
+- Auto levels stay pinned to selected date; they do NOT update when a trade is clicked
+- Manual and auto levels each have an independent on/off toggle in the right panel
 - supports_raw / resistances_raw returned by backend (sorted: resistances ascending, supports descending)
+- Min score filter is client-side: score field is on every returned level; no re-fetch needed when slider moves
 
+## What's next
+One remaining task:
+- **ATH cluster detection** — after standard dedup, scan for top-N highest pivot highs in the lookback window not already within 5pts of an accepted level; captures the 12 missing ATH resistances that pivot geometry misses near the top of the prior move
+
+## Research conclusions (major/minor study — fully exhausted)
+We studied whether Mancini's major/minor distinction (the `(major)` tag in levels.db) could be predicted from the features available. It cannot, with any reliability:
+- Proximity to close4pm: not a factor (42% major rate flat across all distance bands)
+- Recency of pivot: statistically significant but tiny difference (median 10 vs 11 days); when two levels are close together, the major is the more recent one only 52% of the time
+- Major-major spacing: 93% of major-major gaps ≥ 6pts (real pattern), but ML score cannot pick which of a close pair is major — bounce/recency are coin flips within close pairs
+- Best decision tree accuracy: 59.7% (baseline 58.4%) — barely above guessing
+- Conclusion: Mancini's major/minor reflects holistic judgment not reconstructible from pivot geometry alone. The `min_score` filter is the right lever for controlling clutter.
+- See `docs/auto_level_study.md` for full methodology and all phase results
 
 ## Known issues / gotchas
 - CSV column is `volume` (no typo)
 - Databento prices are already in dollar format — no scaling needed
-- On Windows, if Excel has the trade log open with an exclusive lock, pandas read will fail — user should close Excel first
+- On Windows, if Excel has the trade log open with an exclusive lock, pandas read will fail — close Excel first
 - python-dotenv is installed in the venv and used by trades_manager.py
 - Python command on this system: `python` (3.12.11)
 - First backend start after adding es_front_month.parquet builds the file (~30s), subsequent starts load from RAM in ~1s
 - es_1m.parquet: 73MB raw source (DO NOT DELETE); es_front_month.parquet: ~25MB preprocessed (can be rebuilt)
-- Data bounds: DATA_START='2016-03-29' is a const in App.jsx; DATA_END is now useState('2026-03-25') so it updates after a successful download
-- Databento pipeline lag: subscription tier has ~13hr lag (data available up to ~10:54am ET when downloaded at 7pm ET); two successive 422s occur: first "data_end_after_available_end" (pipeline limit), then "dataset_unavailable_range" (subscription cap); downloader loops up to 4 times backing off 1 min each time
-- TradingView CSV export: MES1! or ES1!, 1-min, columns: time/open/high/low/close (no volume); timestamps in ISO-8601 with UTC offset; use as same-day stopgap after 4pm close; TV shows volume in the table view and claims to export all data, but volume column is absent from the downloaded CSV — volume=0 is set on import (irrelevant for auto levels and chart display)
-- Download modal "From" field: read-only, auto-set to the exact UTC timestamp of the last bar in the parquet (from /candles/bounds end_ts). This is sent verbatim to Databento so only truly new bars are fetched. Previously used nextDay(dataEnd) which rounded to UTC midnight and could cause hours of overlap; also had a race condition where the modal could initialize before /candles/bounds resolved, defaulting to 2026-03-25.
-- Download modal "Done" message shows exact ET timestamp of last downloaded bar (e.g. "Done — data through 4/10/2026, 3:08 PM ET"), not just the date.
+- DATA_START='2016-03-29' is a const in App.jsx; DATA_END is useState('2026-03-25') and updates after a successful download
+- Databento pipeline lag: subscription tier has ~13hr lag; two successive 422s occur (pipeline limit, then subscription cap); downloader loops up to 4 times backing off 1 min each time
+- TradingView CSV export: MES1! or ES1!, 1-min, no volume column — volume=0 set on import
+- Download modal "From" field: read-only, auto-set to exact UTC timestamp of last bar in parquet
+- Download modal "Done" message shows exact ET timestamp of last downloaded bar
 - databento Python package: v0.74.1 installed in venv
 - start.bat corruption: `venv\Scripts\activate` was corrupted to `vnot bpts\activate` at some point — if backend fails to start, check start.bat
 
