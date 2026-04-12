@@ -676,7 +676,7 @@ if __name__ == '__main__':
     out_path = Path(args.out)
     df.to_parquet(out_path, index=False)
     elapsed = time.time() - t0
-    print(f"Saved {len(df):,} rows → {out_path}  ({elapsed:.0f}s total)", flush=True)
+    print(f"Saved {len(df):,} rows -> {out_path}  ({elapsed:.0f}s total)", flush=True)
     print(f"\nColumn overview:", flush=True)
     print(df.dtypes.to_string(), flush=True)
     print(f"\nWin rates (win_30 where defined):", flush=True)
