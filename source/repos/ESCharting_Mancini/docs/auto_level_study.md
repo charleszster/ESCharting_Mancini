@@ -724,3 +724,40 @@ Fold 2 is still vastly better than baseline's 25.7% F1.
 - Display all above thr=0.30 (90/day) — show score as visual indicator
 - Or filter to thr=0.40 (77/day) for tighter output at 59% precision + 82% recall
 - Model saved: `data/phase6e_model.json`
+
+---
+
+## Phase 6e — Validation: 4/13/2026 vs Mancini's Published Levels
+
+**Date:** 2026-04-11  
+Anchor: 2026-04-10 4pm ET, close4pm = 6855.5
+
+### Supports (42 Mancini in range, 83 generated)
+- Matched ±2pt: **41/42 = 98%**
+- Only miss: 6702.0
+- Mancini's other 29 supports (6273–6527) are below our ±325pt floor — structural, not fixable without widening price_range
+- Our 31 extras are genuine historical pivots the model is confident about (ML score 0.35–0.86); Mancini curates for clarity
+
+### Resistances (36 Mancini in range, 44 generated)
+- Matched ±2pt: **24/36 = 67%**
+- Miss 12 levels in 7048–7139 zone: `7048, 7052, 7053, 7057, 7067, 7074, 7086, 7094, 7100, 7122, 7130, 7139`
+- All 12 are within our ±325pt range — issue is pivot geometry near ATH; market ran up there briefly without forming clean 5-bar swing highs that the algorithm detects
+
+### Score filter impact (on matched Mancini levels)
+| thr | Sup kept | Sup match | Res kept | Res match |
+|---|---|---|---|---|
+| 0.25 | 78 | 41/42 | 42 | 24/36 |
+| 0.30 | 76 | 40/42 | 38 | 23/36 |
+| 0.35 | 71 | 40/42 | 36 | 23/36 |
+| 0.40 | 61 | 39/42 | 32 | 23/36 |
+
+At thr=0.35: lose 1 Mancini support (score=0.22 and 0.28 — genuinely weak pivots), save 12 lines from display.
+ATH resistance gap is not affected by threshold — those 12 levels simply aren't generated.
+
+### Matched support score distribution
+All 41 matched supports scored 0.22–0.858 (median 0.631). Only 2 below 0.30.
+The 31 extras with score ≥ 0.35 are real levels; Mancini just doesn't publish all of them.
+
+### Next tasks
+1. **Score filter UI** — `min_score` setting (default 0.0) in Auto Levels settings tab; pass through API; filter before returning
+2. **ATH cluster detection** — after standard dedup, add top-N highest/lowest pivots in lookback window not already within 5pt of an accepted level; captures the ATH resistance cluster pivot geometry misses

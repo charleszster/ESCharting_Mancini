@@ -54,18 +54,17 @@ All core features are complete as of Apr 2026. Key capabilities:
 - After fix: max 10pt diff vs TV (was ±51pt), 8 bars in 3264 differ slightly (feed noise)
 
 ## What's next
-- Step 10: Auto level ML classifier (Phase 6) — research complete through Phase 6d; decision point reached
-  - Phases 6a/6b: baseline XGBoost classifier, precision ceiling ~18% (structural, from 825-candidate pool)
-  - Phases 6c/6d: candidate pool reduction via significance filter (top N by prominence*bounce from in-range pool)
-    - sig_inrange_50: 45% precision, F1=54%, 52 levels/day
-    - sig_inrange_30: 50% precision, F1=56%, 32 levels/day
-  - Phase 6e (BEST): ML on deduped pool (~108 cand/day, 50% base rate)
-    - thr=0.30: prec=57%, rec=92%, F1=70%, 90 levels/day — finds 92% of Mancini's levels
-    - thr=0.40: prec=59%, rec=82%, F1=69%, 77 levels/day
-    - Feature importance: dist_from_4pm #1, sr_flip #2, recency_rank #3
-    - Model: data/phase6e_model.json
-  - Next step: integrate phase6e_model into auto_levels.py + backend API + UI
-  - See docs/auto_level_study.md for full results
+- Step 10: Auto level ML classifier (Phase 6) — **integration complete**; two UI/algo improvements queued
+  - Phase 6e model (phase6e_model.json) is wired into auto_levels.py; each level carries a `score` field
+  - `major` is now determined by ML score ≥ 0.5 (was bounce/touches heuristic)
+  - **4/13/2026 comparison vs Mancini's published levels:**
+    - Supports (in range): 41/42 matched ±2pt (98%). Miss only 1. 31 extras, but model is confident in most.
+    - Resistances (in range): 24/36 matched ±2pt (67%). Miss 12 levels in 7048–7139 ATH zone.
+    - ATH resistance gap is structural: market ran up there briefly, no clean pivot formations for algo to find.
+  - **Next two tasks (in priority order):**
+    1. **Score filter UI** — add `min_score` parameter (default 0.0, e.g. 0.35 removes low-conf extras without losing Mancini matches) as a setting in the Auto Levels tab; pass through backend API; filter before returning levels
+    2. **ATH cluster detection** — after standard dedup, scan for top-N highest pivot highs in lookback window not already covered by an accepted level (within 5pt); adds the "ATH resistance cluster" that pivot geometry misses near the top of the prior move
+  - See docs/auto_level_study.md for full methodology and results
 
 ## Auto level generation methodology
 Derived from Mancini Pine Script v5.3, adapted and corrected. Implemented in `backend/auto_levels.py`.

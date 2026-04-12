@@ -1,4 +1,15 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+
+const MODAL_SIZE_KEY = 'chartSettingsModalSize'
+const DEFAULT_W = 560
+const DEFAULT_H = null  // null = use max-height from CSS
+
+function useSavedSize() {
+  const saved = (() => { try { return JSON.parse(localStorage.getItem(MODAL_SIZE_KEY)) } catch { return null } })()
+  const [size, setSize] = useState({ w: saved?.w ?? DEFAULT_W, h: saved?.h ?? null })
+  const save = s => { setSize(s); localStorage.setItem(MODAL_SIZE_KEY, JSON.stringify(s)) }
+  return [size, save]
+}
 
 const CROSSHAIR_MODES = [
   { value: 1, label: 'Snap to close' },
@@ -68,6 +79,30 @@ function Section({ title, children }) {
 
 export default function ChartSettings({ value, onChange, onClose }) {
   const [tab, setTab] = useState('candles')
+  const [size, saveSize] = useSavedSize()
+  const dragRef = useRef(null)
+
+  function onResizeMouseDown(e) {
+    e.preventDefault()
+    const startX = e.clientX, startY = e.clientY
+    const startW = dragRef.current.offsetWidth
+    const startH = dragRef.current.offsetHeight
+    function onMove(e) {
+      const w = Math.max(420, startW + e.clientX - startX)
+      const h = Math.max(300, startH + e.clientY - startY)
+      dragRef.current.style.width  = w + 'px'
+      dragRef.current.style.height = h + 'px'
+    }
+    function onUp(e) {
+      const w = Math.max(420, startW + e.clientX - startX)
+      const h = Math.max(300, startH + e.clientY - startY)
+      saveSize({ w, h })
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
 
   function set(path, val) {
     const keys = path.split('.')
@@ -88,7 +123,8 @@ export default function ChartSettings({ value, onChange, onClose }) {
 
   return (
     <div className="cs-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="cs-modal">
+      <div className="cs-modal" ref={dragRef}
+        style={{ width: size.w, ...(size.h ? { height: size.h, maxHeight: size.h } : {}) }}>
         <div className="cs-header">
           <span className="cs-title">Chart Settings</span>
           <button className="cs-close" onClick={onClose}>✕</button>
@@ -323,6 +359,7 @@ export default function ChartSettings({ value, onChange, onClose }) {
           )}
 
         </div>
+        <div className="cs-resize-handle" onMouseDown={onResizeMouseDown} title="Drag to resize" />
       </div>
     </div>
   )

@@ -18,7 +18,21 @@
       "Bash(cmd:*)",
       "Bash(powershell:*)",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d['version']\\)\")",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(python -c \"import pandas, pyarrow; print\\('ok'\\)\")",
+      "Bash(python:*)",
+      "Bash(ls /c/Users/charl/source/repos/ESCharting_Mancini/*.csv)",
+      "Bash(./venv/Scripts/pip install:*)",
+      "Bash(./venv/Scripts/python:*)",
+      "Bash(node -e ':*)",
+      "Bash(backend/venv/Scripts/python -c ':*)",
+      "Bash(backend/venv/Scripts/python backend/import_levels.py)",
+      "Bash(/c/Users/charl/source/repos/ESCharting_Mancini/backend/venv/Scripts/python:*)",
+      "Bash(sqlite3 /c/Users/charl/source/repos/ESCharting_Mancini/data/levels.db \".schema\")",
+      "Bash(sqlite3 /c/Users/charl/source/repos/ESCharting_Mancini/data/levels.db \".schema levels\")",
+      "Bash(venv/Scripts/python:*)"
     ]
   }
 }

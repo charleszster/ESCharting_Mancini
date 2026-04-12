@@ -803,13 +803,27 @@
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  width: 440px;
+  width: 560px;
   max-height: 78vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 32px rgba(19,23,34,0.18);
   overflow: hidden;
+  position: relative;
 }
+
+.cs-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, var(--border) 50%);
+  border-radius: 0 0 6px 0;
+  opacity: 0.6;
+}
+.cs-resize-handle:hover { opacity: 1; }
 
 .cs-header {
   display: flex;
