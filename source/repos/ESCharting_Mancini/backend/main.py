@@ -10,6 +10,7 @@ from trades_manager import get_trades
 from levels_manager import get_available_dates, get_levels, save_levels, reimport_from_excel
 from downloader import get_estimate, stream_download, import_tv_csv, _executor
 from auto_levels import compute_auto_levels
+from study_trades import router as study_trades_router
 
 
 @asynccontextmanager
@@ -26,6 +27,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(study_trades_router)  # study trades overlay — remove this line + study_trades.py to disable
 
 
 @app.get("/")

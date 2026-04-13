@@ -42,19 +42,32 @@ class TradeMarkersRenderer {
           ctx.closePath()
         }
 
-        // White halo (draw slightly larger stroke first so it's always visible)
-        ctx.save()
-        ctx.strokeStyle = 'rgba(255,255,255,0.9)'
-        ctx.lineWidth   = Math.round(3 * Math.min(hpr, vpr))
-        ctx.lineJoin    = 'round'
-        drawArrowPath()
-        ctx.stroke()
+        if (m.hollow) {
+          // Hollow style: white fill + colored border (for study trade markers)
+          ctx.save()
+          ctx.fillStyle = 'rgba(255,255,255,0.92)'
+          drawArrowPath()
+          ctx.fill()
+          ctx.strokeStyle = m.color
+          ctx.lineWidth   = Math.round(2 * Math.min(hpr, vpr))
+          ctx.lineJoin    = 'round'
+          drawArrowPath()
+          ctx.stroke()
+          ctx.restore()
+        } else {
+          // Solid style: white halo then colored fill (for personal trade markers)
+          ctx.save()
+          ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+          ctx.lineWidth   = Math.round(3 * Math.min(hpr, vpr))
+          ctx.lineJoin    = 'round'
+          drawArrowPath()
+          ctx.stroke()
 
-        // Colored fill on top
-        ctx.fillStyle = m.color
-        drawArrowPath()
-        ctx.fill()
-        ctx.restore()
+          ctx.fillStyle = m.color
+          drawArrowPath()
+          ctx.fill()
+          ctx.restore()
+        }
 
         // Price label with background box
         const fontSize  = Math.round((this._options.fontSize ?? 11) * vpr)

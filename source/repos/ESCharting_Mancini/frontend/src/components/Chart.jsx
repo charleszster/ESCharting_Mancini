@@ -7,6 +7,13 @@ import { LevelLabelsPrimitive } from '../lib/LevelLabels'
 const API_BASE = 'http://localhost:8000'
 const ET_ZONE  = 'America/New_York'
 
+// STUDY TRADES: color map for hollow markers (win/loss per setup type)
+const STUDY_SETUP_COLORS = {
+  afternoon_ft: { win: '#7C3AED', loss: '#EA580C' },
+  fb_afternoon: { win: '#0891B2', loss: '#EA580C' },
+  fb_opening:   { win: '#059669', loss: '#EA580C' },
+}
+
 // ── ET timezone formatters for Lightweight Charts ────────────────────────────
 
 function fmtET(unixSecs, opts) {
@@ -146,12 +153,13 @@ function toBackendTf(tf) {
   return tf
 }
 
-const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange, focusDate, tradeData, batchTrades = null, adjMode = 'non-adj', levels = null }, ref) {
+const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange, focusDate, tradeData, batchTrades = null, adjMode = 'non-adj', levels = null, studyTrades = null }, ref) {  // STUDY TRADES: added studyTrades prop
   const containerRef   = useRef(null)
   const chartRef         = useRef(null)
   const candleRef        = useRef(null)   // candlestick series
   const volRef           = useRef(null)   // volume histogram series
   const markersRef       = useRef(null)   // TradeMarkersPrimitive
+  const studyMarkersRef  = useRef(null)   // STUDY TRADES: TradeMarkersPrimitive for study overlays
   const snapLineRef      = useRef(null)   // price line for OHLC snap mode
   const crosshairModeRef = useRef(settings.crosshairMode)
   const shadingRef       = useRef(null)   // SessionHighlight primitive
@@ -206,7 +214,13 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     resetView() {
       resetToLatest()
       chartRef.current?.priceScale('right').applyOptions({ autoScale: true })
-    }
+    },
+    // STUDY TRADES: zoom chart to a unix timestamp
+    focusOnTime(ts) {
+      if (!chartRef.current) return
+      const halfWindow = 60 * 30  // show ±30 min around the touch
+      chartRef.current.timeScale().setVisibleRange({ from: ts - halfWindow, to: ts + halfWindow })
+    },
   }))
 
   // ── Create chart (runs once) ─────────────────────────────────────────────
@@ -264,14 +278,20 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
     tradeMarkers.setSeries(candle)
     candle.attachPrimitive(tradeMarkers)
 
+    // STUDY TRADES: second primitive for study overlays (hollow markers)
+    const studyMarkers = new TradeMarkersPrimitive()
+    studyMarkers.setSeries(candle)
+    candle.attachPrimitive(studyMarkers)
+
     const levelLabels = new LevelLabelsPrimitive()
     candle.attachPrimitive(levelLabels)
 
-    chartRef.current      = chart
-    candleRef.current     = candle
-    markersRef.current    = tradeMarkers
+    chartRef.current       = chart
+    candleRef.current      = candle
+    markersRef.current     = tradeMarkers
+    studyMarkersRef.current = studyMarkers  // STUDY TRADES
     levelLabelsRef.current = levelLabels
-    shadingRef.current    = new SessionHighlight()
+    shadingRef.current     = new SessionHighlight()
 
     chart.subscribeCrosshairMove(param => {
       const bar = param.seriesData?.get(candle) ?? null
@@ -308,13 +328,14 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
       chart.remove()        // removes all attached primitives automatically
       chartRef.current       = null
       candleRef.current      = null
-      markersRef.current     = null
-      levelLabelsRef.current = null
-      snapLineRef.current    = null
-      volRef.current         = null
-      shadingRef.current     = null
-      shadingOnRef.current   = false
-      levelLinesRef.current  = []
+      markersRef.current      = null
+      studyMarkersRef.current = null  // STUDY TRADES
+      levelLabelsRef.current  = null
+      snapLineRef.current     = null
+      volRef.current          = null
+      shadingRef.current      = null
+      shadingOnRef.current    = false
+      levelLinesRef.current   = []
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -465,6 +486,32 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
       applyMarkers(markersRef.current, candleRef.current, tradeData)
     }
   }, [chartReady, tradeData, batchTrades])
+
+  // ── Study trade markers ──────────────────────────────────────────────────  // STUDY TRADES
+  useEffect(() => {
+    if (!chartReady || !studyMarkersRef.current || !candleRef.current) return
+    if (!studyTrades || studyTrades.length === 0) {
+      studyMarkersRef.current.clearMarkers()
+      return
+    }
+    const candles = candleRef.current.data?.() ?? []
+    const markers = studyTrades.map(t => {
+      const meta = STUDY_SETUP_COLORS[t.setup_type] ?? STUDY_SETUP_COLORS.afternoon_ft
+      const color = t.outcome === 1 ? meta.win : t.outcome === 0 ? meta.loss : '#888888'
+      const ts = findNearestBarTime(candles, t.touch_ts)
+      if (ts === null) return null
+      return {
+        time:      ts,
+        price:     t.level_price,
+        direction: t.is_support ? 'up' : 'down',
+        color,
+        label:     String(t.level_price),
+        hollow:    true,
+      }
+    }).filter(Boolean)
+    markers.sort((a, b) => a.time - b.time)
+    studyMarkersRef.current.setMarkers(markers)
+  }, [chartReady, studyTrades])  // STUDY TRADES end
 
   // ── Level lines ───────────────────────────────────────────────────────────
   useEffect(() => {

@@ -7,6 +7,7 @@ import TimeframeSelector from './components/TimeframeSelector'
 import LevelsPanel from './components/LevelsPanel'
 import ChartSettings from './components/ChartSettings'
 import DownloadModal from './components/DownloadModal'
+import StudyTrades from './components/StudyTrades'  // STUDY TRADES — remove this line + StudyTrades.jsx to disable
 
 const DEFAULT_SETTINGS = {
   // Candles — TradingView default palette
@@ -93,6 +94,9 @@ export default function App() {
   // Batch view
   const [batchMode,   setBatchMode]   = useState(false)
   const [batchTrades, setBatchTrades] = useState([])
+
+  // Study trades overlay  // STUDY TRADES — remove this block to disable
+  const [studyTrades, setStudyTrades] = useState([])
   const [settings,      setSettings]      = useState(DEFAULT_SETTINGS)
   const [showSettings,  setShowSettings]  = useState(false)
   const [showDownload,  setShowDownload]  = useState(false)
@@ -309,6 +313,15 @@ export default function App() {
               selectedId={selectedTrade}
               onSelect={handleTradeSelect}
             />
+            {/* STUDY TRADES — remove this block + StudyTrades import to disable */}
+            <StudyTrades
+              dateRange={dateRange}
+              onTradesChange={setStudyTrades}
+              onSelectTrade={t => {
+                setFocusDate(null)
+                setTimeout(() => chartRef.current?.focusOnTime?.(t.touch_ts), 0)
+              }}
+            />
           </>}
           <button
             className="left-panel-toggle"
@@ -371,7 +384,7 @@ export default function App() {
           </div>
 
           <div className="chart-container">
-            <Chart ref={chartRef} timeframe={timeframe} settings={settings} dateRange={dateRange} focusDate={focusDate} tradeData={batchMode ? null : selectedTradeData} batchTrades={batchMode ? batchTrades : null} adjMode={adjMode} levels={mergedLevels} />
+            <Chart ref={chartRef} timeframe={timeframe} settings={settings} dateRange={dateRange} focusDate={focusDate} tradeData={batchMode ? null : selectedTradeData} batchTrades={batchMode ? batchTrades : null} adjMode={adjMode} levels={mergedLevels} studyTrades={studyTrades} />
           </div>
         </div>
 
