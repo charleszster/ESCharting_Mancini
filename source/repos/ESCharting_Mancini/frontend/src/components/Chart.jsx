@@ -488,27 +488,26 @@ const Chart = forwardRef(function Chart({ timeframe = '5m', settings, dateRange,
   }, [chartReady, tradeData, batchTrades])
 
   // ── Study trade markers ──────────────────────────────────────────────────  // STUDY TRADES
+  // Pass touch_ts directly — LWC timeToCoordinate handles any timestamp in range.
+  // No candle-snapping needed; avoids race condition with candle load timing.
   useEffect(() => {
-    if (!chartReady || !studyMarkersRef.current || !candleRef.current) return
+    if (!chartReady || !studyMarkersRef.current) return
     if (!studyTrades || studyTrades.length === 0) {
       studyMarkersRef.current.clearMarkers()
       return
     }
-    const candles = candleRef.current.data?.() ?? []
     const markers = studyTrades.map(t => {
       const meta = STUDY_SETUP_COLORS[t.setup_type] ?? STUDY_SETUP_COLORS.afternoon_ft
       const color = t.outcome === 1 ? meta.win : t.outcome === 0 ? meta.loss : '#888888'
-      const ts = findNearestBarTime(candles, t.touch_ts)
-      if (ts === null) return null
       return {
-        time:      ts,
+        time:      t.touch_ts,
         price:     t.level_price,
         direction: t.is_support ? 'up' : 'down',
         color,
         label:     String(t.level_price),
         hollow:    true,
       }
-    }).filter(Boolean)
+    })
     markers.sort((a, b) => a.time - b.time)
     studyMarkersRef.current.setMarkers(markers)
   }, [chartReady, studyTrades])  // STUDY TRADES end
